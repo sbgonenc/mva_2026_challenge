@@ -121,7 +121,7 @@ prioritise:                          # `bin/vep-pipeline prioritise --slurm --su
   secondary: {enabled: true, max_rows: 2}
   gene_panel:                        # MVA genes from the literature; see README "Model history"
     name: MVA
-    genes: [BUB1B, CEP57, TRIP13]    # Hanks 2004; Snape 2011; Yost 2017
+    genes: [BUB1B, CEP57, TRIP13, SLF2, SMC5, MAD1L1, PAK6, CENATAC, RPS25, BUB3, BUB1]    # Hanks 2004; Snape 2011; Yost 2017
     phenotype_floor: strong
     deep_second_hit: true
   alternative_pairs: {max_per_gene: 3, min_phenotype: strong}   # max_per_gene 1 = Model 2 behaviour
