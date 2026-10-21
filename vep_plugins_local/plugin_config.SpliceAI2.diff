@@ -1,0 +1,31 @@
+diff --git a/plugin_config.txt b/plugin_config.txt
+index ae54756..9eba496 100644
+--- a/plugin_config.txt
++++ b/plugin_config.txt
+@@ -1164,6 +1164,26 @@ my $VEP_PLUGIN_CONFIG = {
+       ],
+     },
+ 
++    # SpliceAI2
++    {
++      "key" => "SpliceAI2",
++      "label" => "SpliceAI2",
++      "helptip" => "Pre-calculated annotations from SpliceAI2, a deep learning model developed by Illumina, Inc that predicts variant effects on splicing through quantitative modeling of splice sites, splice junctions and transcripts. Used for non-commercial purposes (https://github.com/Illumina/SpliceAI2)",
++      "available" => 0,
++      "enabled" => 0,
++      "section" => "Splicing predictions",
++      "plugin_url" => "https://raw.githubusercontent.com/Ensembl/VEP_plugins/release/116/SpliceAI2.pm",
++      "requires_data" => 1,
++      "params"  => [
++        "#snv=/path/to/snv/chr*.tsv.gz",
++        "#indel=/path/to/indel/chr*.tsv.gz",
++        "#match_to=strand"
++      ],
++      "species" => [
++        "homo_sapiens"
++      ],
++    },
++
+     # SpliceVault
+     {
+       "key" => "SpliceVault",

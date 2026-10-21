@@ -1,0 +1,63 @@
+Usage: exomiser analyse [-h] [--output=<outputOptionsPath>]
+                        [--output-directory=<outputDirectory>]
+                        [--output-filename=<outputFilename>]
+                        [--output-format=<outputFormats>[,
+                        <outputFormats>...]]... [[--sample=<samplePath>]
+                        [--ped=<pedPath>]] [--vcf=<vcfPath>
+                        --assembly=<assembly>] [[--preset=<preset>] |
+                        --analysis=<analysisPath>]
+Runs an Exomiser analysis on a single sample
+  -h, --help              Display this help and exit
+Sample options
+--------------
+These describe the patient phenotypes, exome/genome and pedigree. It is
+possible to include all this in a phenopacket `sample` option, or
+include/override the vcf, assembly and pedigree independently using the
+specific options.
+      --ped=<pedPath>     Path to sample PED file. Only required for
+                            multisample VCF files, but can be omitted if the
+                            --sample option specifies a phenopacket family
+                            containing a pedigree.
+      --sample=<samplePath>
+                          Path to sample phenopacket individual or family file.
+                            This should be in JSON or YAML format.
+VCF options
+-----------
+Required if not included in the sample or will override the VCF path specified
+in the sample.
+      --assembly=<assembly>
+                          Genome assembly of sample VCF file. Either `GRCh37`
+                            or `GRCh38`
+      --vcf=<vcfPath>     Path to sample VCF file. Also requires `--assembly`
+                            option to be defined.
+Analysis options
+----------------
+Exclusive options used to specify how an analysis should be run. If nothing is
+specified, the EXOME preset will be run.
+      --analysis=<analysisPath>
+                          Path to an Exomiser analysis script
+      --preset=<preset>   The Exomiser analysis preset for the input sample.
+                            One of 'exome', 'genome' or 'phenotype_only'.
+                            (default: EXOME)
+Output options
+--------------
+Specifies where and in what format Exomiser should output any analysis results.
+Optional. Will default to writing output files to the `results` directory of
+the exomiser installation.
+      --output=<outputOptionsPath>
+                          Path to outputOptions file. This should be in JSON or
+                            YAML format.
+      --output-directory=<outputDirectory>
+                          Directory where the output files should be written.
+      --output-filename=<outputFilename>
+                          Filename prefix for the output files. Will be
+                            generated from the input VCF filename if not
+                            specified.
+      --output-format=<outputFormats>[,<outputFormats>...]
+                          A list of comma separated output format(s) e.g. HTML
+                            or HTML,JSON. Valid options include [HTML, JSON,
+                            PARQUET, TSV_GENE, TSV_VARIANT, VCF]. Note that
+                            HTML is the most human-friendly, JSON is the most
+                            detailed, but you should consider PARQUET as this
+                            is much smaller and easier to query than JSON
+                            (default: "HTML,JSON,PARQUET")

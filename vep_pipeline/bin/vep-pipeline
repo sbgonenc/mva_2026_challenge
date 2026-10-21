@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs from the caller's directory: a relative -c (and relative paths in the config) resolve from there.
+# Without -c the CLI loads the config.yaml next to the package (an absolute default).
+set -euo pipefail
+here=$(cd "$(dirname "$0")/.." && pwd)
+export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+exec micromamba run -n vep116 python -m vep_pipeline.cli "$@"

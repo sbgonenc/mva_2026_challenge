@@ -1,0 +1,49 @@
+## Genomiser whole-genome analysis -- AG Bunina site copy of
+## examples/preset-genome-analysis.yml.
+##
+## Sole deviation from the shipped preset: CADD is added to
+## pathogenicitySources. Rationale:
+##   - Exomiser's pathogenicityFilter gates non-coding variants on
+##     (CADD >= 15) OR (SpliceAI > 0.1) OR (ReMM > 0.914).
+##   - ReMM's training set contains NO splice variants and no splicing
+##     features (Schubach et al. 2023, GigaScience); on non-coding ClinVar
+##     CADD v1.6 scored AUPRC 0.160 vs ReMM's 0.035. So CADD covers a real
+##     gap in that gate.
+##   - CADD is deliberately ABSENT from the exome pass: Exomiser normalises
+##     CADD PHRED so 10 -> 0.9 and takes the MAX across sources, saturating
+##     most exonic variants at >=0.98 and destroying discrimination
+##     (Cooperstein et al. 2025, Genome Medicine).
+##
+## `target: NON_CODING` requires Exomiser >= 15.1.0; it will not parse on
+## 15.0.0 or earlier. `priorityScoreFilter` must stay immediately after
+## `hiPhivePrioritiser` -- prioritising first is what makes genome-scale
+## analysis tractable.
+---
+analysisMode: PASS_ONLY
+inheritanceModes: {
+  AUTOSOMAL_DOMINANT: 0.1,
+  AUTOSOMAL_RECESSIVE_HOM_ALT: 0.1,
+  AUTOSOMAL_RECESSIVE_COMP_HET: 2.0,
+  X_DOMINANT: 0.1,
+  X_RECESSIVE_HOM_ALT: 0.1,
+  X_RECESSIVE_COMP_HET: 2.0,
+  MITOCHONDRIAL: 0.2
+}
+frequencySources: [
+    UK10K,
+    GNOMAD_E_AFR, GNOMAD_E_AMR, GNOMAD_E_EAS, GNOMAD_E_NFE, GNOMAD_E_SAS,
+    GNOMAD_G_AFR, GNOMAD_G_AMR, GNOMAD_G_EAS, GNOMAD_G_NFE, GNOMAD_G_SAS
+]
+pathogenicitySources: [ REVEL, MVP, ALPHA_MISSENSE, REMM, SPLICE_AI, CADD ]
+steps: [
+    hiPhivePrioritiser: { },
+    priorityScoreFilter: { priorityType: HIPHIVE_PRIORITY, minPriorityScore: 0.501 },
+    geneBlacklistFilter: { },
+    failedVariantFilter: { },
+    alleleBalanceFilter: { },
+    regulatoryFeatureFilter: { },
+    frequencyFilter: { maxFrequency: 2.0 },
+    pathogenicityFilter: { keepNonPathogenic: false, target: NON_CODING },
+    inheritanceFilter: { },
+    omimPrioritiser: { }
+]

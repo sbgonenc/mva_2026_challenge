@@ -1,0 +1,500 @@
+# Plugin registry for vep_pipeline (83 plugin modules from VEP_plugins release/116, plus the local SpliceAI2).
+#
+# Per entry:
+#   module           Perl module name (VEP_plugins/<module>.pm)
+#   category         no_data | public | existing | manual | user_file | db_online | grch37_only | broken | filter
+#                    (only no_data, public, existing, manual, user_file are enableable)
+#   default          true = part of the recommended set shipped in config.yaml (documentation only;
+#                    a plugin is enabled solely by config.yaml `plugins:`)
+#   args             --plugin argument template. {key} = a files key or a params key; {chunk},
+#                    {workdir}, {report_dir} are filled per chunk by ResolvedPlugin.render().
+#   files            key -> {dest, downloads[{url, as, size}], index, index_url, checksums_url,
+#                    prep[], manual, validate, glob}. dest/as are relative to data.plugin_data_dir.
+#                    glob: the path is a user-supplied directory and its data files are the matches of this
+#                    pattern (e.g. per-chromosome files); each must be non-empty and indexed (manual entries only).
+#                    `as` defaults to dest when there is exactly one download.
+#                    prep placeholders: {path} = final file, {dir} = its parent, {empty_indel} (unused by the shipped
+#                    entries: SpliceAI generates its empty indel file through files.indel).
+#   params           defaults for {key} placeholders in args (lists are joined with ",");
+#                    config.yaml may override them
+#   output_fields    VEP output fields declared by the plugin's get_header_info
+#   evidence_class   class of every output field; field_classes overrides it per field
+#   eligible_consequences  SO terms for which the plugin can emit a value ([] = every consequence)
+#   control          positive-control source for the smoke test:
+#                      {source: data, cols: [CHROM, POS, REF, ALT]}  1-based columns of the plugin data file
+#                      {source: vcf}                                  data file is a VCF
+#                      {source: clinvar, mc: <substring of ClinVar INFO/MC>}
+#                      {source: header}                               only header presence is checked
+#   conflicts_with   plugins that must not be enabled together with this one
+#   reason           why an entry is not runnable / needs special handling
+
+_genic: &genic
+  [transcript_ablation, splice_acceptor_variant, splice_donor_variant, stop_gained,
+   frameshift_variant, stop_lost, start_lost, transcript_amplification, inframe_insertion,
+   inframe_deletion, missense_variant, protein_altering_variant, splice_region_variant,
+   splice_donor_5th_base_variant, splice_donor_region_variant,
+   splice_polypyrimidine_tract_variant, incomplete_terminal_codon_variant,
+   start_retained_variant, stop_retained_variant, synonymous_variant, coding_sequence_variant,
+   mature_miRNA_variant, 5_prime_UTR_variant, 3_prime_UTR_variant,
+   non_coding_transcript_exon_variant, intron_variant, NMD_transcript_variant,
+   non_coding_transcript_variant]
+
+_splice: &splice
+  [splice_donor_variant, splice_acceptor_variant, splice_donor_5th_base_variant,
+   splice_region_variant, splice_donor_region_variant, splice_polypyrimidine_tract_variant]
+
+# ---------------------------------------------------------------- curated recipes
+AlphaMissense:
+  module: AlphaMissense
+  category: public
+  default: true
+  args: "AlphaMissense,file={file}"
+  files:
+    file:
+      dest: AlphaMissense/AlphaMissense_hg38.tsv.gz
+      downloads:
+        - {url: "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_hg38.tsv.gz", size: 642961469}
+      index: tbi
+      prep:
+        - "tabix -s 1 -b 2 -e 2 -f -S 1 {path}"
+  output_fields: [am_pathogenicity, am_class]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: [missense_variant]
+  control: {source: data, cols: [1, 2, 3, 4]}
+
+REVEL:
+  module: REVEL
+  category: public
+  default: true
+  args: "REVEL,file={file}"
+  files:
+    file:
+      dest: REVEL/new_tabbed_revel_grch38.tsv.gz
+      downloads:
+        - {url: "https://rothsj06.dmz.hpc.mssm.edu/revel-v1.3_all_chromosomes.zip", as: REVEL/revel.zip, size: 667102707}
+      index: tbi
+      prep:
+        # Step 1: `head -n1` exits after one line, unzip then dies of SIGPIPE and pipefail turns that into exit 141.
+        # So pipefail is switched off only inside this subshell (everything else keeps -euo pipefail), and since that
+        # would also hide a missing member, the zip member is listed first (unzip -l fails if absent) and the header
+        # is checked afterwards to be the real "#chr..." line (not just the printf '#').
+        # Step 2 reads all of its input (tail/tr/awk/sort/cat/bgzip all run to EOF), so it stays strict.
+        - "cd {dir} && unzip -l revel.zip revel_with_transcript_ids >/dev/null && (set +o pipefail; printf '#'; unzip -p revel.zip revel_with_transcript_ids | head -n1 | tr ',' '\\t') > hdr.tsv && grep -q '^#chr' hdr.tsv"
+        - "cd {dir} && unzip -p revel.zip revel_with_transcript_ids | tail -n +2 | tr ',' '\\t' | awk -F'\\t' '$3 != \".\"' | LC_ALL=C sort -T {dir} -S 4G -k1,1 -k3,3n | cat hdr.tsv - | bgzip -f -@4 > new_tabbed_revel_grch38.tsv.gz"
+        - "tabix -f -s 1 -b 3 -e 3 {path} && rm -f {dir}/hdr.tsv {dir}/revel.zip"
+  output_fields: [REVEL]
+  evidence_class: clinically_trained_predictor
+  eligible_consequences: [missense_variant]
+  control: {source: data, cols: [1, 3, 4, 5]}
+
+EVE:
+  module: EVE
+  category: public
+  default: true
+  args: "EVE,popeve_file={popeve}"
+  files:
+    popeve:
+      dest: EVE/grch38_popEVE_ukbb_20250715.vcf.gz
+      downloads:
+        - {url: "https://data.evemodel.org/popeve/v1.1/downloads/grch38_popEVE_ukbb_20250715.vcf.gz", size: 1476124568}
+      index: tbi
+      prep:
+        - "tabix -f -p vcf {path}"
+  output_fields: [popEVE_SCORE, popEVE_gene, popEVE_gap_frequency]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: [missense_variant]
+  control: {source: vcf}
+
+SpliceAI:
+  module: SpliceAI
+  category: public
+  default: false                   # SpliceAI2 is the default splice predictor; this one can still run next to it
+  # split_output=1 makes the plugin emit SpliceAI_pred_DS_AG etc. (without it tab output has the single field SpliceAI_pred)
+  # indel=: SpliceAI.pm new() calls add_file($param_hash->{indel}) unconditionally, so snv= alone dies with
+  # "No file specified" (verified empirically, Task 4). Ensembl publishes SNV scores only, hence an empty
+  # indel file (header only, bgzipped + tabix) is generated locally.
+  args: "SpliceAI,snv={snv},indel={indel},split_output=1"
+  files:
+    snv:
+      dest: SpliceAI/spliceai_scores.masked.snv.ensembl_mane_v1.4.grch38.vcf.gz
+      downloads:
+        - {url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceAI/spliceai_scores.masked.snv.ensembl_mane_v1.4.grch38.vcf.gz", size: 28643031420}
+      index: tbi
+      index_url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceAI/spliceai_scores.masked.snv.ensembl_mane_v1.4.grch38.vcf.gz.tbi"
+      checksums_url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceAI/CHECKSUMS"
+    indel:
+      dest: SpliceAI/empty_indel.vcf.gz
+      index: tbi
+      # same content as checks.make_empty_indel_vcf (a test compares them)
+      prep:
+        - "printf '##fileformat=VCFv4.2\\n#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\n' | bgzip -f > {path} && tabix -f -p vcf {path}"
+  output_fields: [SpliceAI_pred_DS_AG, SpliceAI_pred_DS_AL, SpliceAI_pred_DS_DG, SpliceAI_pred_DS_DL]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: []
+  control: {source: vcf}
+
+SpliceAI_Illumina:
+  module: SpliceAI
+  category: manual
+  default: false
+  args: "SpliceAI,snv={snv},indel={indel},split_output=1"
+  files:
+    snv:
+      dest: SpliceAI_Illumina/spliceai_scores.masked.snv.hg38.vcf.gz
+      index: tbi
+      manual: >-
+        Illumina BaseSpace (free account): https://basespace.illumina.com/s/otSPW8hnhaZR ->
+        genome_scores_v1.3 -> spliceai_scores.masked.snv.hg38.vcf.gz (masked, SNV, hg38); then
+        `tabix -p vcf <file>` and set plugins.SpliceAI_Illumina.snv to its path.
+    indel:
+      dest: SpliceAI_Illumina/spliceai_scores.masked.indel.hg38.vcf.gz
+      index: tbi
+      manual: >-
+        Illumina BaseSpace (free account): https://basespace.illumina.com/s/otSPW8hnhaZR ->
+        genome_scores_v1.3 -> spliceai_scores.masked.indel.hg38.vcf.gz (masked, indel, hg38); then
+        `tabix -p vcf <file>` and set plugins.SpliceAI_Illumina.indel to its path.
+  output_fields: [SpliceAI_pred_DS_AG, SpliceAI_pred_DS_AL, SpliceAI_pred_DS_DG, SpliceAI_pred_DS_DL]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: []
+  conflicts_with: [SpliceAI]
+  control: {source: vcf}
+
+SpliceAI2:
+  module: SpliceAI2
+  category: manual
+  default: true
+  # snv/indel are directories of Illumina's per-chromosome files (chr*.tsv.gz); SpliceAI2.pm loads every *.gz in a
+  # directory. Default columns: summary score + DS/DP equivalents of the strongest donor/acceptor gain/loss.
+  args: "SpliceAI2,snv={snv},indel={indel}"
+  files:
+    snv:
+      dest: SpliceAI2/snv
+      glob: "chr*.tsv.gz"
+      index: tbi
+      manual: >-
+        Hugging Face (non-commercial terms must be accepted first):
+        `hf download illumina-ai/SpliceAI2-data --repo-type dataset --include "precomputed_scores_v2.0/*"`;
+        index every file with `tabix -s 1 -b 2 -e 2 -S 1 <file>` (already bgzipped and sorted) and set
+        plugins.SpliceAI2.snv to precomputed_scores_v2.0/GRCh38/snv.
+    indel:
+      dest: SpliceAI2/indel
+      glob: "chr*.tsv.gz"
+      index: tbi
+      manual: >-
+        Hugging Face (non-commercial terms must be accepted first):
+        `hf download illumina-ai/SpliceAI2-data --repo-type dataset --include "precomputed_scores_v2.0/*"`;
+        index every file with `tabix -s 1 -b 2 -e 2 -S 1 <file>` (already bgzipped and sorted) and set
+        plugins.SpliceAI2.indel to precomputed_scores_v2.0/GRCh38/indel.
+  output_fields: [SpliceAI2_spliceai2_summary_score,
+                  SpliceAI2_donor_gain_delta_score_0, SpliceAI2_donor_loss_delta_score_0,
+                  SpliceAI2_acceptor_gain_delta_score_0, SpliceAI2_acceptor_loss_delta_score_0,
+                  SpliceAI2_donor_gain_dist_0, SpliceAI2_donor_loss_dist_0,
+                  SpliceAI2_acceptor_gain_dist_0, SpliceAI2_acceptor_loss_dist_0]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: []
+  # columns of the score files: chrom, pos, ref, alt, strand, ...
+  control: {source: data, cols: [1, 2, 3, 4]}
+
+SpliceVault:
+  module: SpliceVault
+  category: public
+  default: true
+  args: "SpliceVault,file={file}"
+  files:
+    file:
+      dest: SpliceVault/SpliceVault_data_GRCh38.tsv.gz
+      downloads:
+        - {url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceVault/SpliceVault_data_GRCh38.tsv.gz", size: 883907365}
+      index: tbi
+      index_url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceVault/SpliceVault_data_GRCh38.tsv.gz.tbi"
+      checksums_url: "https://ftp.ensembl.org/pub/release-116/variation/SpliceVault/CHECKSUMS"
+  output_fields: [SpliceVault_top_events, SpliceVault_out_of_frame_events, SpliceVault_site_type, SpliceVault_site_pos, SpliceVault_site_sample_count, SpliceVault_site_max_depth, SpliceVault_SpliceAI_delta]
+  evidence_class: experimental_rnaseq
+  eligible_consequences: *splice
+  # layout from SpliceVault.pm parse_data(): chrom, start, ref, alt, feature, type, site, delta, ...
+  control: {source: data, cols: [1, 2, 3, 4]}
+
+SpliceRegion:
+  module: SpliceRegion
+  category: no_data
+  default: true
+  args: "SpliceRegion"
+  output_fields: [SpliceRegion]
+  evidence_class: consequence
+  eligible_consequences: [splice_region_variant, intron_variant]
+  control: {source: clinvar, mc: splice_region}
+
+NMD:
+  module: NMD
+  category: no_data
+  default: true
+  args: "NMD"
+  output_fields: [NMD]
+  evidence_class: consequence
+  eligible_consequences: [stop_gained, frameshift_variant, splice_donor_variant, splice_acceptor_variant]
+  # sparse by design (only NMD-escaping variants carry a value): header presence only
+  control: {source: header}
+
+UTRAnnotator:
+  module: UTRAnnotator
+  category: public
+  default: true
+  args: "UTRAnnotator,file={file}"
+  files:
+    file:
+      dest: UTRAnnotator/uORF_5UTR_GRCh38_PUBLIC.txt
+      downloads:
+        - {url: "https://raw.githubusercontent.com/Ensembl/UTRannotator/master/uORF_5UTR_GRCh38_PUBLIC.txt", size: 2376724}
+  output_fields: [Existing_uORFs, 5UTR_annotation]
+  evidence_class: consequence
+  eligible_consequences: [5_prime_UTR_variant]
+  control: {source: clinvar, mc: 5_prime_UTR}
+
+LOEUF:
+  module: LOEUF
+  category: public
+  default: true
+  args: "LOEUF,file={file},match_by=gene"
+  files:
+    file:
+      dest: LOEUF/loeuf_dataset_grch38.tsv.gz
+      downloads:
+        - {url: "https://ftp.ensembl.org/pub/release-116/variation/LOEUF/loeuf_dataset_grch38.tsv.gz", size: 354938316}
+      index: tbi
+      index_url: "https://ftp.ensembl.org/pub/release-116/variation/LOEUF/loeuf_dataset_grch38.tsv.gz.tbi"
+      checksums_url: "https://ftp.ensembl.org/pub/release-116/variation/LOEUF/CHECKSUMS"
+  output_fields: [LOEUF]
+  evidence_class: gene_prior_dominant
+  eligible_consequences: *genic
+  control: {source: clinvar, mc: missense_variant}
+
+DosageSensitivity:
+  module: DosageSensitivity
+  category: public
+  default: false
+  args: "DosageSensitivity,file={file}"
+  files:
+    file:
+      dest: DosageSensitivity/Collins_rCNV_2022.dosage_sensitivity_scores.tsv.gz
+      downloads:
+        - {url: "https://zenodo.org/record/6347673/files/Collins_rCNV_2022.dosage_sensitivity_scores.tsv.gz", size: 386018}
+  output_fields: [pHaplo, pTriplo]
+  evidence_class: gene_prior_dominant
+  eligible_consequences: *genic
+  control: {source: clinvar, mc: missense_variant}
+
+MechPredict:
+  module: MechPredict
+  category: public
+  default: true
+  args: "MechPredict,file={file}"
+  files:
+    file:
+      dest: MechPredict/MechPredict_input.tsv
+      downloads:
+        - {url: "https://osf.io/download/h45ns/", as: MechPredict/pgof_svm_poly_2023-07-25.tsv}
+        - {url: "https://osf.io/download/xfy38/", as: MechPredict/pdn_svm_poly_2023-07-25.tsv}
+        - {url: "https://osf.io/download/dj4qg/", as: MechPredict/plof_svm_poly_2023-07-28.tsv}
+      # MechPredict.pm POD (data preparation), verbatim; run under bash with LC_ALL=C
+      prep:
+        - >-
+          export LC_ALL=C && cd {dir} &&
+          cut --complement -f4 pdn_svm_poly_2023-07-25.tsv | awk '{print $1 " " $2 "\t" $0}' | sort >pdn_mod.tsv &&
+          cut --complement -f4 pgof_svm_poly_2023-07-25.tsv | awk '{print $1 " " $2 "\t" $0}' | sort >pgof_mod.tsv &&
+          cut --complement -f4 plof_svm_poly_2023-07-28.tsv | awk '{print $1 " " $2 "\t" $0}' | sort >plof_mod.tsv &&
+          join -t $'\t' -1 1 -2 1 pdn_mod.tsv pgof_mod.tsv | join -t $'\t' -1 1 -2 1 - plof_mod.tsv | cut --complement -f1,5,6,8,9 | sed '1i gene uniprot_id pDN pGOF pLOF' >MechPredict_input.tsv &&
+          rm pdn_mod.tsv pgof_mod.tsv plof_mod.tsv
+  output_fields: [MechPredict_pDN, MechPredict_pGOF, MechPredict_pLOF, MechPredict_prediction]
+  evidence_class: gene_prior_dominant
+  eligible_consequences: [missense_variant]
+  control: {source: clinvar, mc: missense_variant}
+
+G2P:
+  module: G2P
+  category: public
+  default: true
+  args: "G2P,file={file},log_dir={workdir}/g2p_log,txt_report={report_dir}/g2p.{chunk}.txt,html_report={report_dir}/g2p.{chunk}.html"
+  files:
+    file:
+      dest: G2P/G2P_all.csv
+      downloads:
+        - {url: "https://www.ebi.ac.uk/gene2phenotype/api/panel/all/download"}
+      # the API answers HTTP 200 with an HTML/JSON error page on failure, so check the content
+      validate: {plain_text: true, first_line_contains: ["allelic requirement", "gene symbol"], min_lines: 1000}
+  output_fields: [G2P_flag, G2P_complete, G2P_gene_req]
+  evidence_class: gene_phenotype
+  eligible_consequences: *genic
+  # frequency-gated, sparse: header presence only
+  control: {source: header}
+
+PhenotypeOrthologous:
+  module: PhenotypeOrthologous
+  category: public
+  default: true
+  args: "PhenotypeOrthologous,file={file}"
+  files:
+    file:
+      dest: PhenotypeOrthologous/PhenotypesOrthologous_homo_sapiens_112_GRCh38.gff3.gz
+      downloads:
+        - {url: "https://ftp.ensembl.org/pub/release-116/variation/PhenotypeOrthologous/PhenotypesOrthologous_homo_sapiens_112_GRCh38.gff3.gz", size: 3424946}
+      index: tbi
+      index_url: "https://ftp.ensembl.org/pub/release-116/variation/PhenotypeOrthologous/PhenotypesOrthologous_homo_sapiens_112_GRCh38.gff3.gz.tbi"
+      checksums_url: "https://ftp.ensembl.org/pub/release-116/variation/PhenotypeOrthologous/CHECKSUMS"
+  output_fields: [PhenotypeOrthologous_Mouse_phenotype, PhenotypeOrthologous_Rat_phenotype]
+  evidence_class: gene_phenotype
+  eligible_consequences: *genic
+  control: {source: clinvar, mc: missense_variant}
+
+MaveDB:
+  module: MaveDB
+  category: public
+  default: true
+  args: "MaveDB,file={file}"
+  files:
+    file:
+      dest: MaveDB/MaveDB_variants.tsv.gz
+      downloads:
+        - {url: "https://ftp.ensembl.org/pub/release-116/variation/MaveDB/MaveDB_variants.tsv.gz", size: 560599773}
+      index: tbi
+      index_url: "https://ftp.ensembl.org/pub/release-116/variation/MaveDB/MaveDB_variants.tsv.gz.tbi"
+      checksums_url: "https://ftp.ensembl.org/pub/release-116/variation/MaveDB/CHECKSUMS"
+  output_fields: [MaveDB_score, MaveDB_urn]
+  evidence_class: experimental_assay
+  eligible_consequences: [missense_variant]
+  control: {source: data, cols: [1, 2, 4, 5]}
+
+CADD:
+  module: CADD
+  category: existing
+  default: true
+  args: "CADD,snv={snv},indels={indels}"
+  files:
+    snv:
+      dest: CADD/whole_genome_SNVs.tsv.gz
+      index: tbi
+      manual: >-
+        CADD scores are not downloaded by this pipeline. Set plugins.CADD.snv to a tabix-indexed
+        CADD GRCh38 whole_genome_SNVs.tsv.gz (https://cadd.gs.washington.edu/download).
+    indels:
+      dest: CADD/indels.tsv.gz
+      index: tbi
+      manual: >-
+        CADD scores are not downloaded by this pipeline. Set plugins.CADD.indels to a tabix-indexed
+        CADD GRCh38 indel file (InDels.tsv.gz from https://cadd.gs.washington.edu/download, or the
+        gnomAD r4.0 indel file).
+  output_fields: [CADD_PHRED, CADD_RAW]
+  evidence_class: unsupervised_predictor
+  eligible_consequences: []
+  control: {source: data, cols: [1, 2, 3, 4]}
+
+dbNSFP:
+  module: dbNSFP
+  category: manual
+  default: false
+  args: "dbNSFP,{file},{columns}"
+  files:
+    file:
+      dest: dbNSFP/dbNSFP_grch38.gz
+      index: tbi
+      manual: >-
+        Register at https://www.dbnsfp.org/download (institutional email, licence CC BY-NC-ND),
+        download the GRCh38 VEP-ready file and its .tbi index, and set plugins.dbNSFP.file to it.
+        The file name must contain the dbNSFP version.
+  params:
+    columns: [BayesDel_noAF_score, VEST4_score, ESM1b_score]
+  output_fields: [BayesDel_noAF_score, VEST4_score, ESM1b_score]
+  evidence_class: mixed
+  field_classes:
+    BayesDel_noAF_score: clinically_trained_predictor
+    VEST4_score: clinically_trained_predictor
+    ESM1b_score: unsupervised_predictor
+  eligible_consequences: [missense_variant]
+  # dbNSFP VEP-ready layout: #chr, pos(1-based), ref, alt, ...
+  control: {source: data, cols: [1, 2, 3, 4]}
+
+Paralogues:
+  module: Paralogues
+  category: db_online
+  reason: "data file removed from Ensembl FTP (404, releases 113-116); needs Compara DB"
+
+# ---------------------------------------------------------------- no_data (off by default)
+Blosum62:            {module: Blosum62, category: no_data, args: Blosum62, output_fields: [BLOSUM62], evidence_class: consequence, eligible_consequences: [missense_variant]}
+Carol:               {module: Carol, category: no_data, args: Carol, output_fields: [CAROL], evidence_class: clinically_trained_predictor, eligible_consequences: [missense_variant]}
+Condel:              {module: Condel, category: no_data, output_fields: [Condel], evidence_class: clinically_trained_predictor, eligible_consequences: [missense_variant], reason: "needs the Condel config directory; enable via args (Condel,/path/to/config/Condel/config,b)"}
+CSN:                 {module: CSN, category: no_data, args: CSN, output_fields: [CSN], evidence_class: consequence}
+Downstream:          {module: Downstream, category: no_data, args: Downstream, output_fields: [DownstreamProtein, ProteinLengthChange], evidence_class: consequence, eligible_consequences: [frameshift_variant]}
+HGVSIntronOffset:    {module: HGVSIntronOffset, category: no_data, args: HGVSIntronOffset, output_fields: [HGVS_IntronStartOffset, HGVS_IntronEndOffset], evidence_class: consequence}
+HGVSReferenceBase:   {module: HGVSReferenceBase, category: no_data, args: HGVSReferenceBase, output_fields: [HGVS_ref], evidence_class: consequence}
+LoFtool:             {module: LoFtool, category: no_data, args: LoFtool, output_fields: [LoFtool], evidence_class: gene_prior_dominant}
+NearestExonJB:       {module: NearestExonJB, category: no_data, args: NearestExonJB, output_fields: [NearestExonJB], evidence_class: consequence}
+pLI:                 {module: pLI, category: no_data, args: pLI, evidence_class: gene_prior_dominant}
+TSSDistance:         {module: TSSDistance, category: no_data, args: TSSDistance, output_fields: [TSSDistance], evidence_class: consequence}
+
+# ---------------------------------------------------------------- filter plugins (not annotators)
+RankFilter:          {module: RankFilter, category: filter, reason: "filter plugin: drops consequences instead of annotating"}
+NonSynonymousFilter: {module: NonSynonymousFilter, category: filter, reason: "filter plugin: drops consequences instead of annotating"}
+CCDSFilter:          {module: CCDSFilter, category: filter, reason: "filter plugin: drops consequences instead of annotating"}
+
+# ---------------------------------------------------------------- user_file (need a user-supplied input)
+SubsetVCF:           {module: SubsetVCF, category: user_file}
+TranscriptAnnotator: {module: TranscriptAnnotator, category: user_file}
+DeNovo:              {module: DeNovo, category: user_file}
+ProteinSeqs:         {module: ProteinSeqs, category: user_file}
+SingleLetterAA:      {module: SingleLetterAA, category: user_file}
+LocalID:             {module: LocalID, category: user_file}
+
+# ---------------------------------------------------------------- public data, no recipe (enable via args)
+AncestralAllele:     {module: AncestralAllele, category: public}
+AVI:                 {module: AVI, category: public}
+ClinPred:            {module: ClinPred, category: public}
+Conservation:        {module: Conservation, category: public}
+dbscSNV:             {module: dbscSNV, category: public}
+Enformer:            {module: Enformer, category: public}
+FlagLRG:             {module: FlagLRG, category: public}
+GeneSplicer:         {module: GeneSplicer, category: public}
+gnomADc:             {module: gnomADc, category: public}
+gnomADMt:            {module: gnomADMt, category: public}
+GWAS:                {module: GWAS, category: public}
+IntAct:              {module: IntAct, category: public}
+MaxEntScan:          {module: MaxEntScan, category: public}
+mutfunc:             {module: mutfunc, category: public}
+OpenTargets:         {module: OpenTargets, category: public}
+ProtVar:             {module: ProtVar, category: public}
+ReferenceQuality:    {module: ReferenceQuality, category: public}
+RiboseqORFs:         {module: RiboseqORFs, category: public}
+satMutMPRA:          {module: satMutMPRA, category: public}
+
+# ---------------------------------------------------------------- manual download (enable via args)
+PrimateAI:           {module: PrimateAI, category: manual, reason: "manual download via a free Illumina BaseSpace account (see PrimateAI.pm POD); no registry recipe"}
+PromoterAI:          {module: PromoterAI, category: manual, reason: "manual download (see the plugin POD); no registry recipe"}
+Mastermind:          {module: Mastermind, category: manual, reason: "manual download (see the plugin POD); no registry recipe"}
+Geno2MP:             {module: Geno2MP, category: manual, reason: "manual download (see the plugin POD); no registry recipe"}
+
+# ---------------------------------------------------------------- GRCh37-only data
+AVADA:               {module: AVADA, category: grch37_only}
+BayesDel:            {module: BayesDel, category: grch37_only}
+CAPICE:              {module: CAPICE, category: grch37_only}
+FATHMM_MKL:          {module: FATHMM_MKL, category: grch37_only}
+FunMotifs:           {module: FunMotifs, category: grch37_only}
+MPC:                 {module: MPC, category: grch37_only}
+MTR:                 {module: MTR, category: grch37_only}
+VARITY:              {module: VARITY, category: grch37_only}
+PON_P2:              {module: PON_P2, category: grch37_only}
+
+# ---------------------------------------------------------------- need a live database / web service
+FATHMM:              {module: FATHMM, category: db_online}
+GeneBe:              {module: GeneBe, category: db_online}
+GO:                  {module: GO, category: db_online}
+LD:                  {module: LD, category: db_online}
+LOVD:                {module: LOVD, category: db_online}
+NearestGene:         {module: NearestGene, category: db_online}
+neXtProt:            {module: neXtProt, category: db_online}
+Phenotypes:          {module: Phenotypes, category: db_online}
+PolyPhen_SIFT:       {module: PolyPhen_SIFT, category: db_online}
+RefSeqHGVS:          {module: RefSeqHGVS, category: db_online}
+SameCodon:           {module: SameCodon, category: db_online}
+
+# ---------------------------------------------------------------- broken in release/116
+GXA:                 {module: GXA, category: broken}
+DAS:                 {module: DAS, category: broken}
+Draw:                {module: Draw, category: broken}

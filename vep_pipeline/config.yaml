@@ -1,0 +1,127 @@
+# vep_pipeline configuration. Workflow:
+#   bin/vep-pipeline download --dry-run ; bin/vep-pipeline download   (login node)
+#   bin/vep-pipeline check ; bin/vep-pipeline smoke
+#   bin/vep-pipeline run --slurm            (prints sbatch commands; add --submit to submit)
+# "{a.b}" refers to another key in this file. No spaces in paths.
+assembly: GRCh38
+cache_version: 116
+sample: SAMPLE_ID                    # VCF sample column; must equal the Exomiser phenopacket subject.id
+
+tools:
+  env: vep116
+  vep_repo: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/ensembl-vep
+  plugins_dir: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/VEP_plugins
+  prepare_vcf: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/bin/prepare-patient-vcf.sh
+  prepare_env: exomiser
+  pget: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/bin/pget.sh
+
+input:
+  vcf: null                          # REQUIRED: proband VCF (raw, or output of prepare-patient-vcf.sh)
+  normalize: true                    # false if `vcf` is already prepare-patient-vcf.sh output
+  reference_fasta: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/Homo_sapiens.GRCh38.dna.primary_assembly.fa
+
+sv:                                  # optional structural-variant run (off until SV calls exist)
+  enabled: false
+  vcf: null
+
+output:
+  dir: /fast/AG_Bunina/Berk/projects/mva_challenge_26/results/vep
+  prefix: "{sample}"
+
+data:                                # all downloads land under data.root unless a plugin path is set below
+  root: /fast/AG_Bunina/Berk/projects/mva_challenge_26/data/vep
+  cache_dir: "{data.root}/cache"
+  plugin_data_dir: "{data.root}/plugins"
+  custom_data_dir: "{data.root}/custom"
+
+run:
+  fork: 4
+  buffer_size: 5000
+  extra_flags: []
+
+slurm:
+  partition: normal
+  cpus: 4
+  mem: 16G
+  time: "24:00:00"
+  log_dir: "{output.dir}/logs"
+
+smoke:
+  region: "17:43044295-43125483"     # BRCA1, GRCh38
+
+custom:
+  ClinVar:
+    enabled: true
+    file: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/clinvar.vcf.gz
+    format: vcf
+    type: exact
+    fields: [CLNSIG, CLNREVSTAT, CLNDN, CLNSIGCONF, ALLELEID]
+  ENCODE_cCRE:
+    enabled: true
+    source: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/GRCh38-cCREs.bed
+    format: bed
+    type: overlap
+
+plugins:                             # true/false or a mapping. `bin/vep-pipeline list-plugins` shows all 83.
+  AlphaMissense: true
+  REVEL: true
+  EVE: true
+  CADD:
+    enabled: true
+    snv: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/data/whole_genome_SNVs.tsv.gz
+    indels: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/data/gnomad.genomes.r4.0.indel.tsv.gz
+  dbNSFP:
+    enabled: false
+    file: null
+    columns: [BayesDel_noAF_score, VEST4_score, ESM1b_score]
+  SpliceAI: false
+  SpliceAI_Illumina: {enabled: false, snv: null, indel: null}
+  SpliceAI2:                         # directories of Illumina's per-chromosome files, each tabix-indexed (-S 1)
+    enabled: true
+    snv: /fast/AG_Bunina/Berk/data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/snv
+    indel: /fast/AG_Bunina/Berk/data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/indel
+  SpliceVault: true
+  SpliceRegion: true
+  NMD: true
+  UTRAnnotator: true
+  LOEUF: true
+  DosageSensitivity: false
+  MechPredict: true
+  G2P: true
+  PhenotypeOrthologous: true
+  MaveDB: true
+
+exomiser:                            # phenotype evidence for `prioritise`; `bin/vep-pipeline exomiser --submit`
+  enabled: true                      # false: rank on variant evidence only (phenotype = none, max tier T4)
+  hpo: []                            # REQUIRED when enabled: your HPO ids, e.g. [HP:0001250, HP:0001263]
+  sex: UNKNOWN_SEX                  # MALE | FEMALE | UNKNOWN_SEX; `check` prints a sex estimate
+  phenopacket: null                  # or an existing phenopacket (subject.id must equal `sample`)
+  root: /fast/AG_Bunina/Berk/tools/exomiser
+  mem: 48G
+
+phasing:                             # `bin/vep-pipeline phase --submit` (before prioritise); WhatsHap read-backed phase
+  enabled: true                      # true: prioritise needs the {sample}.readback.tsv sidecar the phase job writes
+  bam: /fast/AG_Bunina/Berk/projects/mva_challenge_26/alignment/sorted.bam   # needs its .bai
+  # FASTA the BAM was aligned to (GRCh38 analysis set, chr prefix removed); bgzipped, with .fai and .gzi
+  reference: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set_chr_removed.fna.gz
+  env: whatshap                      # micromamba env with whatshap and samtools
+  indels: false                      # WhatsHap 2.8 has no --indels flag (indels are phased by default); false only omits the legacy flag
+  results_dir: null                  # default {output.dir}/phasing
+
+prioritise:                          # `bin/vep-pipeline prioritise --slurm --submit [--sensitivity]`
+  top_n: 10
+  chrom_prefix: chr
+  exclude_evidence_classes: []       # ablation: known_variant, clinically_trained_predictor, unsupervised_predictor, ...
+  missense_tool: alphamissense       # single missense predictor; revel = Model 2 behaviour
+  exclude_regions:                   # never form findings here; listed in *.excluded.tsv ([] = Model 2 behaviour)
+    - {name: MHC, chrom: "6", start: 28510120, end: 33480577}   # GRC-defined MHC, GRCh38
+  pheno_rank: {strong: 20, moderate: 200}   # fixed before the first real run; do not tune on the result
+  p_trans_unphased: 0.5
+  primary_sum_cap: 0.95
+  secondary: {enabled: true, max_rows: 2}
+  gene_panel:                        # MVA genes from the literature; see README "Model history"
+    name: MVA
+    genes: [BUB1B, CEP57, TRIP13]    # Hanks 2004; Snape 2011; Yost 2017
+    phenotype_floor: strong
+    deep_second_hit: true
+  alternative_pairs: {max_per_gene: 3, min_phenotype: strong}   # max_per_gene 1 = Model 2 behaviour

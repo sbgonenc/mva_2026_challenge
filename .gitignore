@@ -1,0 +1,36 @@
+# Third-party clones: fetch them separately (see README.md)
+ensembl-vep/
+VEP_plugins/
+SpliceAI2/
+
+# Exomiser: vendored CLI release, data, logs and test data
+exomiser/exomiser-cli-*/
+exomiser/data/
+exomiser/logs/
+exomiser/test/
+
+# Patient data, results and run reports: never commit
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bcf
+*.bam
+*.bai
+*.cram
+*.crai
+*.phenopacket.yaml
+*.phenopacket.yml
+results/
+vep_pipeline/docs/
+vep_pipeline/config.local.yaml
+vep_pipeline/*.csv
+*_Track1.*
+
+# Tooling
+.codegraph/
+.worktrees/
+.superpowers/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.bak
