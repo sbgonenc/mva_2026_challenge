@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import pytest
 
 from vep_pipeline.config import ConfigError
-from vep_pipeline.rank_settings import DEFAULT_TIERS, exomiser_settings, phasing_settings, prioritise_settings
+from vep_pipeline.rank_settings import (DEFAULT_TIERS, EXCLUDABLE, exomiser_settings, phasing_settings,
+                                        prioritise_settings, regnet_settings)
 
 
 def test_defaults_when_sections_absent(minimal_cfg):
@@ -356,3 +359,100 @@ def test_alternative_pairs_are_validated(minimal_cfg, ap):
     minimal_cfg["prioritise"] = {"alternative_pairs": ap}
     with pytest.raises(ConfigError, match="prioritise.alternative_pairs"):
         prioritise_settings(minimal_cfg)
+
+
+# ----------------------------------------------------------------------------- regnet
+
+def _regnet_cfg(cfg, tmp_path, **rn):
+    cfg["regnet"] = rn
+    return cfg
+
+
+def _traits_tsv(cfg, traits):
+    d = Path(cfg["output"]["dir"]) / "regnet"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "traits.tsv").write_text("trait\tsource\tlabel\tn_tf\n" + "".join(f"{t}\tsrcA\tx\t3\n" for t in traits))
+
+
+def test_regnet_defaults_are_disabled(minimal_cfg):
+    rn = regnet_settings(minimal_cfg)
+    assert rn["enabled"] is False
+    assert rn["build_dir"] == str(Path(minimal_cfg["output"]["dir"]) / "regnet")
+    assert rn["sldsc_model"] == "M1" and rn["fdr"] == 0.10 and rn["null_draws"] == 1000 and rn["seed"] == 2026
+    assert Path(rn["trait_labels"]).is_file()
+
+
+def test_regnet_explicit_build_dir_wins(minimal_cfg, tmp_path):
+    cfg = _regnet_cfg(minimal_cfg, tmp_path, build_dir="/x/y")
+    assert regnet_settings(cfg)["build_dir"] == "/x/y"
+
+
+def test_regnet_unknown_key(minimal_cfg, tmp_path):
+    with pytest.raises(ConfigError, match="bogus"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, bogus=1))
+
+
+@pytest.mark.parametrize("fdr", [0, 1.5, True, "0.1"])
+def test_regnet_fdr_range(minimal_cfg, tmp_path, fdr):
+    with pytest.raises(ConfigError, match="regnet.fdr"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, fdr=fdr))
+
+
+def test_regnet_model_must_be_supported(minimal_cfg, tmp_path):
+    with pytest.raises(ConfigError, match="sldsc_model"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, sldsc_model="M2"))
+    assert regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, sldsc_model="M1bin"))["sldsc_model"] == "M1bin"
+
+
+@pytest.mark.parametrize("key,val", [("null_draws", 0), ("null_draws", 1.5), ("null_draws", True), ("seed", -1),
+                                     ("seed", "1"), ("traits", "T1"), ("traits", [1]), ("sldsc_dirs", "d"),
+                                     ("enabled", "yes")])
+def test_regnet_type_checks(minimal_cfg, tmp_path, key, val):
+    with pytest.raises(ConfigError, match=f"regnet.{key}"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, **{key: val}))
+
+
+def test_regnet_enabled_needs_predeclared_traits(minimal_cfg, tmp_path):
+    with pytest.raises(ConfigError, match="pre-declared"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, enabled=True))
+
+
+def test_regnet_enabled_needs_the_build(minimal_cfg, tmp_path):
+    with pytest.raises(ConfigError, match="regnet-build"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, enabled=True, traits=["T1"]))
+
+
+def test_regnet_enabled_lists_missing_traits(minimal_cfg, tmp_path):
+    _traits_tsv(minimal_cfg, ["T1", "T2"])
+    with pytest.raises(ConfigError, match=r"\['T9', 'T8'\] not in"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, enabled=True, traits=["T1", "T9", "T8"]))
+    rn = regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, enabled=True, traits=["T1", "T2"]))
+    assert rn["enabled"] and rn["traits"] == ["T1", "T2"]
+
+
+def test_regnet_disabled_does_no_file_checks(minimal_cfg, tmp_path):
+    rn = regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, enabled=False, traits=["nope"]))
+    assert rn["traits"] == ["nope"]
+
+
+def test_regnet_build_inputs_must_exist(minimal_cfg, tmp_path):
+    with pytest.raises(ConfigError, match="scdori_dir"):
+        regnet_settings(minimal_cfg, need_build=False)
+    scd, sl = tmp_path / "scdori", tmp_path / "sl"
+    scd.mkdir()
+    with pytest.raises(ConfigError, match="sldsc_dirs"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, scdori_dir=str(scd)), need_build=False)
+    with pytest.raises(ConfigError, match="sldsc_dirs"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, scdori_dir=str(scd), sldsc_dirs=[str(sl)]),
+                        need_build=False)
+    sl.mkdir()
+    with pytest.raises(ConfigError, match="trait_labels"):
+        regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, scdori_dir=str(scd), sldsc_dirs=[str(sl)],
+                                    trait_labels=str(tmp_path / "none.tsv")), need_build=False)
+    rn = regnet_settings(_regnet_cfg(minimal_cfg, tmp_path, scdori_dir=str(scd), sldsc_dirs=[str(sl)],
+                                     trait_labels=None), need_build=False)
+    assert rn["enabled"] is False
+
+
+def test_regulatory_network_is_excludable():
+    assert "regulatory_network" in EXCLUDABLE

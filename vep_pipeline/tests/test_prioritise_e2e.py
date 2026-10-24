@@ -215,3 +215,133 @@ def test_compound_het_tsv(e2e_panel):
             row = body[int(r["csv_row"]) - 1]
             assert {_key(row[1:5]), _key(row[5:9])} == {r["variant_1"], r["variant_2"]}
     assert all(not r["csv_row"] for r in rows if r["reportable"] != "yes")
+
+
+# ----------------------------------------------------------------------------- regulatory network (regnet)
+
+REG_RECORD = {"pos": 30100, "csq": [{"Consequence": "intergenic_variant"}]}     # in a peak linked to GENEAR
+
+
+def _regnet_build(tmp_path, gene="GENEAR"):
+    from test_regnet_build import _w, make_sldsc
+    from vep_pipeline.regnet_build import build
+    sc = tmp_path / "scdori"
+    for sub in ("gene_peak_interactions", "eGRN_act_peak_gene", "GRN_act_TF_gene"):
+        (sc / sub).mkdir(parents=True)
+    _w(sc / f"gene_peak_interactions/{gene}_enhancers_peak_links_.tsv", [["peak_name2", "Ct a"], ["chr1:30000-30500", 0.4]])
+    _w(sc / "eGRN_act_peak_gene/Ct_a_eGRN_edge_list.tsv", [["source", "target", "weight"], ["TF1", "chr1:30000-30500", 0.1]])
+    _w(sc / "GRN_act_TF_gene/Ct_a_GRN_edge_list.tsv", [["source", "target", "weight"], ["TF1", gene, 0.1]])
+    _w(sc / "GRN_act_TF_gene/Ct_a_GRN.tsv", [["gene_symbol", "TF1"], [gene, 0.1], ["GENEAD", 0.0]])
+    out = tmp_path / "regnet_build"
+    build(sc, [make_sldsc(tmp_path, "srcA")], "M1", out, None)
+    return out
+
+
+def _outputs(out):
+    return {p.name: p.read_bytes() for p in sorted(out.parent.iterdir()) if p.is_file() and p.name.startswith(out.stem)}
+
+
+def test_regnet_writes_regulatory_tsv_and_summary(e2e, tmp_path):
+    write_vcf(tmp_path / "out" / "S1.vep.vcf.gz", RECORDS + [REG_RECORD], CSQ)
+    out, _ = pr.run(e2e, prioritise_settings(e2e))
+    plain = _outputs(out)
+    assert not out.with_suffix(".regulatory.tsv").exists()
+    assert not out.with_suffix(".regulatory.summary.tsv").exists()
+    for p in out.parent.iterdir():
+        if p.is_file() and p.name.startswith(out.stem):
+            p.unlink()
+    e2e["regnet"] = {"enabled": True, "build_dir": str(_regnet_build(tmp_path)), "traits": ["T1"], "null_draws": 20}
+    out, _ = pr.run(e2e, prioritise_settings(e2e))
+    with open(out.with_suffix(".regulatory.tsv"), newline="") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert [(r["chrom"], r["pos"], r["gene"], r["tier"], r["pheno"], r["sldsc_tfs"], r["v"], r["second_hit"])
+            for r in rows] == [("chr1", "30100", "GENEAR", "R2", "strong", "TF1(T1:0.002)", "no", "no")]
+    kv = dict(l.split("\t") for l in out.with_suffix(".regulatory.summary.tsv").read_text().splitlines())
+    assert kv["hits"] == "1" and kv["rows_R2"] == "1" and kv["declared_traits"] == "T1:"
+    assert kv["flagged_tfs_T1"] == "TF1" and kv["null_draws"] == "20"
+    with_reg = _outputs(out)
+    assert set(with_reg) - set(plain) == {out.with_suffix(".regulatory.tsv").name,
+                                          out.with_suffix(".regulatory.summary.tsv").name}
+    assert {k: v for k, v in with_reg.items() if k in plain} == plain     # the CSV and every TSV are unchanged
+
+
+def test_regnet_disabled_block_changes_nothing(e2e, tmp_path):
+    out, _ = pr.run(e2e, prioritise_settings(e2e))
+    before = _outputs(out)
+    e2e["regnet"] = {"enabled": False, "build_dir": str(tmp_path / "missing")}
+    out, _ = pr.run(e2e, prioritise_settings(e2e))
+    assert _outputs(out) == before and not any(".regulatory" in n for n in before)
+
+
+# AR gene GENEREG (strong phenotype): a stop (strong null) and an intergenic CADD 26 variant in a peak linked to it.
+# CADD 26 is >= 25.3, a non-coding CADD second hit on its own; the variant has no CSQ entry for GENEREG (link-only),
+# so it must carry only the network reason and vanish under no_regulatory_network.
+REG_CSQ = CSQ + ["CADD_PHRED"]
+REG_SECOND = [{"pos": 30100, "csq": [{"Consequence": "intergenic_variant", "CADD_PHRED": "26"}]},
+              {"pos": 31000, "ref": "C", "alt": "T", "csq": [e("GENEREG", "stop_gained", HGVSp="ENSP_R:p.Arg10Ter")]}]
+
+
+@pytest.fixture
+def e2e_reg(e2e, tmp_path):
+    write_vcf(tmp_path / "out" / "S1.vep.vcf.gz", RECORDS + REG_SECOND, REG_CSQ)
+    with open(tmp_path / "g2p.csv", "a") as fh:
+        fh.write("GENEREG,biallelic_autosomal,definitive,loss of function\n")
+    pheno = [("GENEAR3", 0.95), ("GENEREG", 0.92), ("GENEAR", 0.90), ("GENEAR2", 0.85), ("FILL1", 0.80),
+             ("FILL2", 0.79), ("GENEAD", 0.70), ("TP53", 0.40)]
+    write_genes_tsv(tmp_path / "out" / "exomiser" / "phenotype" / "S1.genes.tsv",
+                    [(i, g, "ANY", p, p) for i, (g, p) in enumerate(pheno, 1)])
+    e2e["prioritise"]["pheno_rank"] = {"strong": 4, "moderate": 7}
+    return e2e
+
+
+def _reg_on(cfg, tmp_path, **kw):
+    cfg["regnet"] = {"enabled": True, "build_dir": str(_regnet_build(tmp_path, "GENEREG")), "traits": ["T1"],
+                     "null_draws": 20, **kw}
+
+
+def _tsv_rows(path):
+    with open(path, newline="") as fh:
+        return list(csv.DictReader(fh, delimiter="\t"))
+
+
+def _sens(out):
+    rows = [l.split("\t") for l in out.with_suffix(".sensitivity.tsv").read_text().splitlines()[1:]]
+    by = {}
+    for r in rows:
+        by.setdefault(r[0], []).append(r[1:])
+    return by
+
+
+def test_regnet_second_hit_pairs_with_a_strong_null(e2e_reg, tmp_path):
+    out, cand = pr.run(e2e_reg, prioritise_settings(e2e_reg), sensitivity=True)
+    plain = _sens(out)
+    assert [(r["tier"], r["variant_2"]) for r in _tsv_rows(cand) if r["gene"] == "GENEREG"] == [("T4", "")]
+    _reg_on(e2e_reg, tmp_path)
+    out, cand = pr.run(e2e_reg, prioritise_settings(e2e_reg), sensitivity=True)
+    (reg,) = _tsv_rows(out.with_suffix(".regulatory.tsv"))
+    assert (reg["gene"], reg["tier"], reg["second_hit"], reg["v"]) == ("GENEREG", "R1", "yes", "yes")
+    (row,) = [r for r in _tsv_rows(cand) if r["gene"] == "GENEREG"]
+    assert (row["tier"], row["epcr_before_cap"], row["fit"], row["level"], row["phase"]) == (
+        "T3", "0.150", "full", "supporting", "unknown")                          # T3 0.30 x p_trans 0.5
+    assert (row["variant_1"], row["variant_2"]) == ("1:30100:A>G", "1:31000:C>T")
+    assert ("v1: chr1:30000-30500 het level=supporting [regulatory network: peak chr1:30000-30500 -> GENEREG; R1; "
+            "S-LDSC TFs TF1 (second hit only)]") in row["notes"]
+    sens = _sens(out)
+    assert set(sens) == {name for name, _ in pr.SCENARIOS} | {"no_regulatory_network"}
+    assert sens["no_regulatory_network"] == plain["base"]                        # the hook removed = the plain run
+    assert sens["base"] != plain["base"]
+
+
+def test_regnet_disabled_or_without_second_hit_keeps_every_output(e2e_reg, tmp_path):
+    out, _ = pr.run(e2e_reg, prioritise_settings(e2e_reg), sensitivity=True)
+    before = _outputs(out)
+    assert "no_regulatory_network" not in _sens(out)
+    _reg_on(e2e_reg, tmp_path, enabled=False)
+    out, _ = pr.run(e2e_reg, prioritise_settings(e2e_reg), sensitivity=True)
+    assert _outputs(out) == before                                               # byte-identical, sensitivity too
+    e2e_reg["regnet"].update(enabled=True, second_hit=False)
+    out, _ = pr.run(e2e_reg, prioritise_settings(e2e_reg), sensitivity=True)
+    after = _outputs(out)
+    assert {k: v for k, v in after.items() if ".regulatory" not in k} == before
+    assert (out.with_suffix(".regulatory.tsv").name in after
+            and "\tyes\t" in out.with_suffix(".regulatory.tsv").read_text())   # a second-hit row, not used

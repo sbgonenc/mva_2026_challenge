@@ -17,7 +17,7 @@ import yaml
 
 from .config import ConfigError
 from .jobs import _key, _out_dir, _prefix
-from .rank_settings import exomiser_settings
+from .rank_settings import PHENOS, exomiser_settings
 
 # The phenotype-only pass needs an explicit GRCh38 assembly: without a VCF, Exomiser 15.1 defaults the sample to hg19
 # and aborts with UnsupportedGenomeAssemblyException (job 3713229; also the site's gate-1 test), and `--assembly` is
@@ -178,3 +178,16 @@ def pheno_strength(pe, symbol, cuts) -> str:
     if r is None:
         return "unknown"
     return "strong" if r <= cuts["strong"] else "moderate" if r <= cuts["moderate"] else "weak"
+
+
+def gene_pheno(pe, gene, settings) -> tuple[str, str]:
+    """(phenotype strength, panel label) of a gene: pheno_strength, raised to prioritise.gene_panel.phenotype_floor
+    for a panel gene (label gets ' (phenotype floor)' when the floor raised it). The label is '' off the panel."""
+    pheno = pheno_strength(pe, gene, settings["pheno_rank"])
+    gp = settings["gene_panel"]
+    if gene not in gp["genes"]:
+        return pheno, ""
+    panel = gp["name"] or "gene_panel"
+    if gp["phenotype_floor"] and PHENOS.index(gp["phenotype_floor"]) < PHENOS.index(pheno):
+        return gp["phenotype_floor"], f"{panel} (phenotype floor)"
+    return pheno, panel

@@ -43,7 +43,8 @@ bin/vep-pipeline run --slurm --submit    # submits array job + dependent merge j
 | `reconcile --chunk NAME` | Reconciles one rendered chunk (the array task runs this after VEP). Chunk names are listed in `{output.dir}/work/contigs.txt`. |
 | `exomiser [--submit]` | Writes the phenopacket from `exomiser.hpo` and the Exomiser SLURM job (phenotype-only, exome and genome passes). Without `--submit` it prints the `sbatch` command. Results go under `{output.dir}/exomiser`. |
 | `phase [--submit]` | With `phasing.enabled`: writes the WhatsHap read-backed phasing job for the candidate genes (`{phasing.results_dir}/phase.sbatch`). Without `--submit` it prints the `sbatch` command. The job writes `{sample}.readback.tsv`, which `prioritise` reads; run it before `prioritise` and wait until it has finished. `--prepare` and `--finish` are the job's own steps. See "Read-backed phasing". |
-| `prioritise [--slurm [--submit]] [--top-n N] [-o CSV] [--sensitivity]` | Ranks findings in the final VEP VCF with the Exomiser phenotype evidence and writes the top-N CSV, `.candidates.tsv`, `.compound_het.tsv`, `.excluded.tsv` and (with `--sensitivity`) `.sensitivity.tsv`. Use `--slurm` for a WGS VCF; see "Prioritising the top 10". |
+| `regnet-build` | With the `regnet:` block (inputs only; `enabled` is not needed): compiles the scDoRI regulatory network and the S-LDSC results into small TSVs under `{regnet.build_dir}` (default `{output.dir}/regnet`) for `prioritise`. Run it inside an allocation. See "Regulatory network (`regnet`)". |
+| `prioritise [--slurm [--submit]] [--top-n N] [-o CSV] [--sensitivity]` | Ranks findings in the final VEP VCF with the Exomiser phenotype evidence and writes the top-N CSV, `.candidates.tsv`, `.compound_het.tsv`, `.excluded.tsv`, (with `--sensitivity`) `.sensitivity.tsv` and (with `regnet.enabled`) `.regulatory.tsv` and `.regulatory.summary.tsv`. Use `--slurm` for a WGS VCF; see "Prioritising the top 10". |
 
 `run` needs exactly one of `--local N`, `--slurm` or `--merge-only`; `--submit` only applies to `--slurm`.
 
@@ -240,7 +241,8 @@ Contig names follow the reference FASTA (`1..22,X,Y,MT`) on both sides. Each var
 1. `bin/vep-pipeline run ...` produces `{prefix}.vep.vcf.gz` (VEP).
 2. `bin/vep-pipeline exomiser --submit` writes the phenopacket (`exomiser.hpo` is required) and runs Exomiser as a SLURM job: a phenotype-only pass, then an exome and a genome pass. Results go under `{output.dir}/exomiser`.
 3. Only with `phasing.enabled` (Model 3): when both are done, `bin/vep-pipeline phase --submit` runs WhatsHap on the candidate genes and writes the read-back sidecar `{phasing.results_dir}/{sample}.readback.tsv` (see "Read-backed phasing"). Wait until this job has **finished**, not only started. The job deletes the previous sidecar as its first step: a `prioritise` job that starts while the phase job is still pending reads the previous run's sidecar (if there is one), and one that starts while it runs finds no sidecar and stops.
-4. Then: `bin/vep-pipeline prioritise --slurm --submit --sensitivity`. The VCF scan runs as a SLURM job, never on the login node. Without `--submit` the command writes `work/prioritise.sbatch` (with a frozen copy of the resolved config, `work/prioritise.config.yaml`; both overwrite an earlier run's files) and prints the `sbatch` command. With `phasing.enabled` and no sidecar, `prioritise` stops with "run `vep-pipeline phase --submit` first". `--slurm` does not check the sidecar when it writes the job, so in that case the job itself fails.
+4. Only with `regnet.enabled` (Model 4): `bin/vep-pipeline regnet-build` once, inside an allocation, before `prioritise` (see "Regulatory network (`regnet`)"). It does not read the sample's data, and the result is reused by every later run.
+5. Then: `bin/vep-pipeline prioritise --slurm --submit --sensitivity`. The VCF scan runs as a SLURM job, never on the login node. Without `--submit` the command writes `work/prioritise.sbatch` (with a frozen copy of the resolved config, `work/prioritise.config.yaml`; both overwrite an earlier run's files) and prints the `sbatch` command. With `phasing.enabled` and no sidecar, `prioritise` stops with "run `vep-pipeline phase --submit` first". `--slurm` does not check the sidecar when it writes the job, so in that case the job itself fails.
 
 There is no SLURM client in the code-server shell, so `--submit` (here, for `exomiser` and for `phase`) is run from a cluster login shell. The code only renders the scripts. `prioritise` without `--slurm` runs in the calling shell, which is fine for a small VCF or a test, not for a WGS VCF.
 
@@ -258,6 +260,7 @@ Default path `{output.dir}/{prefix}.top{N}.csv`; the other files replace the `.c
 | `*.excluded.tsv` | `variant, region`: every record with an alt genotype (PASS) inside an `exclude_regions` interval, sorted and de-duplicated. None of them formed a finding. |
 | `*.sensitivity.tsv` | With `--sensitivity`: the selected rows under every pre-declared scenario (see "Sensitivity scenarios"). |
 | `{phasing.results_dir}/{sample}.readback.tsv` | Written by `phase`, read by `prioritise` (see "Read-backed phasing"). |
+| `*.regulatory.tsv`, `*.regulatory.summary.tsv` | Only with `regnet.enabled`: the ranked rare non-coding variants in gene-linked peaks, and a key/value summary of the run (see "Regulatory-network outputs"). |
 
 `*.compound_het.tsv` columns: `gene, variant_1, variant_2, hgvs_1, hgvs_2, level_1, level_2, reasons_1, reasons_2, phase, phase_sources, distance, collapsed_into, fit, tier, epcr_before_cap, reportable, csv_row`. The phase comes from the same phase graph as the ranking.
 
@@ -412,9 +415,153 @@ Default `{max_per_gene: 1, min_phenotype: strong}`: one finding per gene, Model 
 - **Shared budget.** A gene's kept pairs exclude each other (only one can be the patient's genotype), so two or more of them share one budget. With B = the largest tier value among them (before the phase discount), each gets epcr_i = B x tier_i / sum(tier) x phase factor_i, where the phase factor is `p_trans_unphased` for a pair not proven trans, else 1. Single-hit rows are nested hypotheses, not exclusive ones, and keep their epcr. The rows are then re-sorted and the primary cap applies. Worked example, a BUB1B-like gene with one panel partner: null + moderate missense (T2, 0.60) and null + panel candidate (T4, 0.10) give 0.60 x 0.60 / 0.70 = 0.514 and 0.60 x 0.10 / 0.70 = 0.086, both x 0.5 unphased: **0.257 and 0.043**, still above T5 noise (0.02).
 - **Secondary rows follow the same rule** (user ruling 2026-10-20). By definition they have a weak, unknown or none phenotype, so with `min_phenotype: strong` or `moderate` they never get alternatives. A `min_phenotype` of `weak`, `unknown` or `none` lets an ACMG SF gene at or above it keep alternative pairs, and their shared budget then splits the SF confidence (0.30 / 0.20 / 0.10) between them.
 
+### Regulatory network (`regnet`)
+
+Off by default (`enabled: false`; Model 2 and 3 behaviour): with it off, `prioritise` writes byte-identical outputs and `regnet-build` is not needed. Use it to look for a rare non-coding allele that VEP does not link to a gene (no `SYMBOL`, so it is dropped today) but that lies in an enhancer peak linked to a phenotype gene in a single-cell regulatory network (scDoRI), where the transcription factors (TFs) binding the peak are enriched for heritability of a pre-declared GWAS trait (S-LDSC). The result is a separate report (`*.regulatory.tsv`), and optionally a supporting, second-hit-only allele in the recessive-pair ranking (see "Regulatory-network second hit"). Standalone non-coding rows never enter the top-N CSV.
+
+The idea follows sc-linker (Jagadeesh 2022: single-cell programs, enhancer-gene links and S-LDSC) and the convergence of common and Mendelian disease genes on phenotype-matched traits (Freund 2018). It is a prioritisation heuristic, not a calibrated pathogenicity score; see "Regulatory-network limitations".
+
+**`regnet-build`** is proband-independent. It streams the scDoRI eGRN edge lists once (about 112 M lines, one file per cell type), keeps only edges on gene-linked peaks, and compiles everything into `{regnet.build_dir}` (default `{output.dir}/regnet`). On the atlas it was developed with (about 38 k linked peaks, 134 cell types) it takes about 3 minutes and 5.5 GB of memory; run it inside an allocation.
+
+| Input | Read from | Used for |
+|---|---|---|
+| scDoRI `gene_peak_interactions/<GENE>_enhancers_peak_links_.tsv` | `regnet.scdori_dir` (the scDoRI postprocess directory) | peak to gene links: rows are peaks named `chrN:start-end`, columns are cell types; the gene comes from the file name (it may contain `_`). A peak listed in a gene's file is linked to it. |
+| scDoRI `eGRN_act_peak_gene/<cell type>_eGRN_edge_list.tsv` | same | TF to peak edges (`source target weight`), kept only for linked peaks; the TFs of a peak are those with an edge in any cell type |
+| scDoRI `GRN_act_TF_gene/<cell type>_GRN_edge_list.tsv`, `<cell type>_GRN.tsv` | same | TF to gene regulons (union over cell types) and the gene universe (the row names of the `_GRN.tsv` matrices) |
+| S-LDSC `h2_cts/<model>/<trait>.cell_type_results.txt`, `full/passing.txt` | each directory of `regnet.sldsc_dirs` | per-TF heritability coefficient (tau) and one-sided p-value for each trait that passes QC; a `passing.txt` line with a comma is an rg pair and is ignored |
+| trait labels | `regnet.trait_labels` | trait id to label (public ontology labels), for `traits.tsv` and the summary |
+
+S-LDSC directories are read in the listed order and a trait is taken from the **first** directory that has a result file for it. Within each trait the p-values are Benjamini-Hochberg (BH) adjusted across the TFs. `regnet.sldsc_model` selects the TF annotation (`M1` reads the `TF_<name>` rows, `M1bin` the `TFbin_<name>` rows).
+
+| Output in `{regnet.build_dir}` | Columns / content |
+|---|---|
+| `linked_peaks.tsv` | `peak chrom start end gene link_max` (`link_max` = maximum over cell types; the sign is not used) |
+| `peak_tfs.tsv` | `peak tf n_celltypes max_weight celltypes` |
+| `regulons.tsv` | `tf gene n_celltypes` |
+| `gene_universe.txt` | one scDoRI gene symbol per line |
+| `sldsc.tsv` | `trait source tf coef se p fdr` (`source` = the S-LDSC directory name) |
+| `traits.tsv` | `trait source label n_tf` |
+| `build.json` | input paths, file counts, row counts, regulon size summary, UTC time |
+
+`regnet` block (validated by `prioritise`, also at `--slurm` render time, and by `regnet-build`; an unknown key is an error):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | false | true: `prioritise` loads the resource, writes the regulatory TSVs and (with `second_hit`) adds the second hits. Needs `traits` and a built `build_dir` that contains them. |
+| `scdori_dir` | none | scDoRI postprocess directory; `regnet-build` only |
+| `sldsc_dirs` | `[]` | S-LDSC result directories, in precedence order (first directory wins per trait); `regnet-build` only |
+| `sldsc_model` | `M1` | `M1` or `M1bin` (the TF annotation read from `h2_cts`) |
+| `build_dir` | `{output.dir}/regnet` | where `regnet-build` writes and `prioritise` reads |
+| `trait_labels` | `vep_pipeline/data/sldsc_trait_labels.tsv` | `trait<TAB>label` TSV joined into `traits.tsv`; null or absent gives the packaged file (labels cannot be switched off), an empty string is an error |
+| `traits` | `[]` | the **pre-declared** S-LDSC trait ids used for ranking. They are matched to the HPO terms by hand, from the label table, before any run and before looking at any variant; none is added afterwards. Required when `enabled`, and each must be in `traits.tsv`. No match for a term is a valid outcome. |
+| `fdr` | 0.10 | cut-off for an S-LDSC TF flag and a regulon flag; a number in (0, 1] |
+| `second_hit` | true | true: eligible rows become second-hit-only alleles in the pair ranking; false: only the report is written |
+| `null_draws` | 1000 | number of random trait sets in the null (positive integer) |
+| `seed` | 2026 | seed of the null (non-negative integer); the same seed gives the same draws |
+
+#### Using your own single-cell GRN and S-LDSC results
+
+`regnet-build` finds its inputs by directory and file-name pattern only, so the output of your own scDoRI run (or of another single-cell GRN tool, reshaped to this layout) and your own S-LDSC runs can be plugged in through `regnet.scdori_dir` and `regnet.sldsc_dirs`:
+
+```
+<scdori_dir>/
+  gene_peak_interactions/<GENE>_enhancers_peak_links_.tsv  # header; then per peak: chrN:start-end, one link score per cell type
+  eGRN_act_peak_gene/<cell type>_eGRN_edge_list.tsv        # header; then exactly 3 columns: TF, peak, weight
+  GRN_act_TF_gene/<cell type>_GRN_edge_list.tsv            # header; then exactly 3 columns: TF, gene, weight
+  GRN_act_TF_gene/<cell type>_GRN.tsv                      # header; first column = gene symbol (other columns ignored)
+<sldsc_dir>/                                               # one or more, listed in regnet.sldsc_dirs
+  full/passing.txt                                         # trait ids that passed your QC, one per line
+  h2_cts/M1/<trait>.cell_type_results.txt                  # ldsc.py --h2-cts output (h2_cts/M1bin/ for sldsc_model: M1bin)
+```
+
+- **Files are tab-separated** and each has one header row, which is skipped. Columns are read by position, except the S-LDSC files (by name).
+- **Peaks** are named `chrN:start-end` (with `chr`; N is 1-22, X, Y or M), and the eGRN `peak` column must use exactly the names of the links files. A malformed peak name in a links file stops the build. Blank or `nan` link scores are ignored, and the score itself is not a filter: every peak listed in `<GENE>_..._.tsv` counts as linked to `<GENE>`.
+- **Genes** are taken from the links file name with the suffix `_enhancers_peak_links_.tsv` stripped (a symbol may contain `_`). Use the gene symbols Exomiser reports; a symbol Exomiser does not rank becomes `unknown` (R5).
+- **Cell types** are the file-name prefixes of the edge lists and need not match across subdirectories; a TF counts on a peak if it has an edge in any cell type.
+- **S-LDSC, one annotation per TF.** Run `ldsc.py --h2-cts` with an `.ldcts` file whose first column (the `Name` column of the results) is `TF_<TF>` for `M1` (or `TFbin_<TF>` for `M1bin`), where `<TF>` is spelled exactly as in the eGRN TF column; rows with another prefix (cell-type or baseline annotations) are ignored. The results need the standard columns `Name`, `Coefficient`, `Coefficient_std_error` and `Coefficient_P_value`. The trait id is the file-name stem. Only traits listed in `full/passing.txt` are read (a line containing a comma is an rg pair and is skipped; a listed trait without a result file is skipped).
+- **Trait labels.** `regnet.trait_labels` is a TSV with the header `trait<TAB>label`. The packaged `vep_pipeline/data/sldsc_trait_labels.tsv` holds public ontology labels (EFO, MONDO, HP ids written with `_`); for other trait ids pass your own file. A trait without a label still works (blank label); labels are only for reading `traits.tsv` and the summary.
+
+Then run `regnet-build`, read `{build_dir}/traits.tsv` to choose the traits that match the phenotype (by label, before any run and before looking at variants), list them in `regnet.traits` and set `regnet.enabled: true`.
+
+### Regulatory-network scoring
+
+During the VCF scan (`candidates.collect`, no second pass) a hook captures a record when it is:
+
+- **not mitochondrial and not in an excluded region** (`exclude_regions`), and its alt allele is not `*`;
+- **rare**: popmax over `af.populations` (gnomAD exomes and genomes) at most `af.max_recessive`. The gate is off when the `population` class is excluded;
+- **non-coding**: no CSQ entry of the record has a coding term (null, protein-altering, in-frame, splice-region, synonymous, stop/start-retained, incomplete terminal codon or coding-sequence variant). A record with no CSQ entry is not captured. VEP's `SYMBOL` is not needed;
+- **in a gene-linked peak**: the record's REF span overlaps a peak of `linked_peaks.tsv` (inclusive bounds, `start <= pos <= end`; contig names match with or without `chr`).
+
+With `qc.pass_only` true (the default) non-PASS records are never read, so they are never captured. Calls that fail the GQ or DP cut-off are dropped at scoring (`hits` vs `hits_qc_pass`). Each remaining call gives one row per linked gene of each overlapping peak, de-duplicated per (variant, gene) to its best peak (tier, then flagged-TF counts, then peak name).
+
+For a row, with G the linked gene:
+
+- **pheno** is G's phenotype strength as in the ranking (`pheno_rank` cut-offs on the Exomiser phenotype-only rank, with the gene-panel floor). A gene Exomiser did not rank is `unknown`; with Exomiser off the phenotype is `none` (every row is R5).
+- **V** (variant signal) is CADD PHRED >= 20.0 (the maximum over the record's CSQ entries; the same constant as the cCRE signal) or ReMM >= 0.963 (the second-hit cut-off above). CADD is ignored when `unsupervised_predictor` is excluded, and ReMM when `clinically_trained_predictor` is excluded.
+- **S** (S-LDSC support): at least one TF on the peak is S-LDSC-flagged. A TF is flagged when, for **any** declared trait, its tau is positive and its BH q-value within that trait (across TFs) is below `fdr`.
+
+| pheno of G | V and S | V or S (one) | neither |
+|---|---|---|---|
+| strong | R1 | R2 | R3 |
+| moderate | R2 | R3 | R4 |
+| weak, unknown, none | R5 | R5 | R5 |
+
+Rows are sorted by tier, then by the number of S-LDSC-flagged TFs on the peak (more first), the number of regulon-flagged TFs, ReMM, CADD (all descending), then variant key and gene. S only raises a tier: it never creates evidence on its own, because S-LDSC measures where common-variant heritability concentrates.
+
+- **Regulon enrichment (supporting; used only to sort).** The phenotype genes are the scDoRI-universe genes with a strong or moderate pheno. For each TF with at least one regulon gene in the universe, a one-sided hypergeometric test asks whether its regulon (union of TF-to-gene edges over cell types, restricted to the universe) holds more phenotype genes than expected. The p-values are BH-adjusted across TFs; a TF with q below `fdr` is regulon-flagged. It does not change the tier.
+- **Random-trait null.** "Any of k declared traits" inflates the chance that some TF is flagged, so the summary reports a null: `null_draws` random sets of k traits (k = number of declared traits), drawn from every trait in `traits.tsv` with the seed above, each counted by the number of distinct S-LDSC-flagged TFs. `null_p = (1 + #(null >= observed)) / (null_draws + 1)`, where `observed` is the flagged-TF count of the declared traits. A small `null_p` means the declared traits flag more TFs than arbitrary trait sets of the same size; a large one means the flagged TFs are what any traits would give, and S then carries little information. The null tests the trait choice, not any variant.
+
+### Regulatory-network second hit
+
+With `second_hit: true`, a row is **eligible** (`second_hit=yes` in the report) when its pheno is `strong` (the panel floor counts) and V holds. That is R1, or R2 through V. The variant then joins the candidates of gene G with a new reason, `regulatory network: peak <peak> -> <G>; <tier>[; S-LDSC TFs <list>] (second hit only)`, at level `supporting` and second-hit-only: it never ranks a gene alone, and can only complete a recessive pair as its weaker allele, like ReMM and non-coding CADD (see "epcr is heuristic"). Rules:
+
+- **Candidate with a CSQ entry for G** (VEP already linked the variant to G): it has its normal gene evidence and the network reason is added only when the allele has no standalone evidence: an allele that already has one (for example ClinVar P/LP, or SpliceAI >= 0.2) keeps that level and shows no network reason. An existing (variant, G) candidate is replaced in place, so a pair never contains the same variant twice.
+- **Link-only candidate** (the gene comes from the peak link alone): the evidence carries only the network reason and the ClinVar benign / likely-benign veto. Popmax, consequence and the peak name (in place of an HGVS) are kept for reporting. No CADD, REVEL, AlphaMissense, splice or panel signal is attached, so the variant cannot be anything but supporting and second-hit-only.
+- **Exclusions.** The `regulatory_network` evidence class removes the reason entirely. A row also needs one predictor class behind its V that is not excluded: CADD maps to `unsupervised_predictor`, ReMM to `clinically_trained_predictor`, and the reason is dropped when every class behind V is excluded.
+- **Bound.** A pair with a strong gene and a network allele is `[supporting, full, strong]`, tier T3 (0.30), times `p_trans_unphased`: at most 0.15 while the phase is unproven, so it cannot displace a T1 or T2 pair and can appear as an alternative pair. If a VCF `PS` / `PID` proves the pair trans it reaches 0.30. Two second-hit-only alleles never pair.
+- **Scenario.** `no_regulatory_network` (below) removes the hook, and is reported only when `enabled` and `second_hit` are both true, so other runs keep the same sensitivity table.
+- **Eligibility is fixed at base settings.** `second_hit` uses the base phenotype cut-offs and panel floor; scenarios that change `pheno_rank` or the panel do not recompute it (the class exclusions are the only re-gating).
+- **Phase.** The read-back step (`phase --prepare`) scans the VCF without the hook, so a network allele is not read-back phased and its pairs stay at the unphased factor unless the VCF phases them (`PS` / `PID`).
+
+### Regulatory-network outputs
+
+`*.regulatory.tsv` has one row per (variant, linked gene), in the sort order above, with `chrom_prefix` applied to the contig. Columns:
+
+| Column | Meaning |
+|---|---|
+| `chrom`, `pos`, `ref`, `alt` | the normalised call (the CSV instead uses the original VCF record when normalisation changed it); only the `chrom_prefix` is shared |
+| `gene` | the linked gene G |
+| `tier` | R1 to R5 |
+| `pheno`, `panel` | G's phenotype strength, and `panel=<name>` (with `(phenotype floor)` when the floor raised it) |
+| `second_hit` | `yes` when the row is **eligible** (strong pheno and V), not necessarily used: pairs form only in recessive or unknown-MOI genes, and a hom/hemi call, a call with a missing allele, or a gene without a partner allele never produces a pair. The column and `second_hit_rows` are computed whatever `regnet.second_hit` says; that key only controls whether the hook runs |
+| `peak` | the peak that gave the best tier |
+| `popmax`, `cadd`, `remm` | popmax over `af.populations`; CADD PHRED (maximum over CSQ entries); ReMM from Genomiser. Blank when absent. |
+| `v` | `yes` when V holds |
+| `n_tfs` | TFs on the peak |
+| `sldsc_tfs` | `TF(trait:q,...);...`: the flagged TFs on the peak with their trait and q-value |
+| `regulon_tfs` | `TF(q);...`: the regulon-flagged TFs on the peak |
+| `consequence` | the record's consequence terms, `&`-joined |
+
+`*.regulatory.summary.tsv` is a two-column `key`, `value` table (lists `;`-joined): `hits` (captured records), `hits_qc_pass`, `rows`, `rows_R1` to `rows_R5`, `second_hit_rows`, `linked_genes_with_hits`, `linked_genes_unranked` (hit genes Exomiser's phenotype-only pass does not rank, before the panel floor; they are `unknown` and so R5, which is where a gene-symbol mismatch between scDoRI and Exomiser shows up), `declared_traits` (`id:label`), `flagged_tfs_<trait>`, `observed_flagged_tfs`, `null_draws`, `null_median`, `null_p`, `pheno_genes_in_universe`, `regulon_flagged_tfs` (`TF(q)`).
+
+### Regulatory-network limitations
+
+- **Coverage.** scDoRI models a fixed gene, TF and peak universe (about 4,000 genes, 500 TFs, 79 k peaks; S-LDSC covers 112 of the TFs), and only a subset of genes has a linked peak. Absence of a link is not evidence against a gene. A gene whose symbol differs between scDoRI and Exomiser is `unknown`, so its rows are R5; the summary counts them (`linked_genes_unranked`).
+- **No known distal allele.** A published distal regulatory allele (an intergenic variant 44 kb upstream of a mosaic variegated aneuploidy gene; Ochiai 2014) lies outside every scDoRI peak, so this method would not have found it. The cis window is the peak, not a distance.
+- **Common to rare transfer.** S-LDSC measures where common-variant heritability concentrates. Using it to up-weight a rare variant rests on the convergence of common and Mendelian disease genes (Freund 2018), not on direct evidence, which is why S only raises a tier.
+- **Missing tissues.** The atlas has no kidney, placenta or gonad, so phenotypes whose biology sits in an absent cell type are not covered.
+- **Trait choice and multiplicity.** A TF is flagged when it passes in any declared trait. BH runs within a trait across TFs, not across traits, so more declared traits give more flags; the random-trait null reports this, and it only calibrates the count of flagged TFs. A phenotype with no matching trait gets no S at all.
+- **No motif-disruption estimate.** Whether the variant changes a TF motif is not scored. Every rare variant in a peak is otherwise alike, so V (CADD or ReMM) is required for the upper tiers and the second hit.
+- **Permissive regulons.** A regulon is the union of TF-to-gene edges over all cell types, so regulons are large and the enrichment is used only to sort within a tier.
+- **Peak coordinates.** The 0- or 1-based convention is unverified, so overlap is inclusive and errs by at most 1 bp toward inclusion. The link sign is ignored: any listed peak counts as linked.
+- **Eligibility and phase.** Second-hit eligibility uses the base phenotype cut-offs in scenarios, and network pairs are not read-back phased (see above).
+- **Post-hoc design.** The module was designed after Model 2's score and Model 3's result (see "Model history"). Thresholds reuse existing constants (CADD 20, ReMM 0.963, `pheno_rank`) or are fixed in this section, and the config is frozen before the run.
+
+Citations: S-LDSC, Finucane 2015 (doi:10.1038/ng.3404); cell-type S-LDSC with a one-sided coefficient test and FDR across annotations, Finucane 2018 (doi:10.1038/s41588-018-0081-4); sc-linker, Jagadeesh 2022 (doi:10.1038/s41588-022-01187-9); Mendelian genes near GWAS loci of phenotype-matched traits, Freund 2018 (doi:10.1016/j.ajhg.2018.08.017); non-coding variants as an in-trans second hit in phenotype-matched genes, Ellingford 2022 (doi:10.1186/s13073-022-01073-3); a distal regulatory MVA allele, Ochiai 2014 (doi:10.1073/pnas.1317008111).
+
 ### Sensitivity scenarios
 
-`--sensitivity` writes `*.sensitivity.tsv` (`scenario, row, gene, finding_type, tier, epcr, variant_1, variant_2`): the selected rows under ten scenarios, each of which replaces only its own setting. Every scenario is reported; none is chosen afterwards.
+`--sensitivity` writes `*.sensitivity.tsv` (`scenario, row, gene, finding_type, tier, epcr, variant_1, variant_2`): the selected rows under ten scenarios (eleven with the regulatory-network hook), each of which replaces only its own setting. Every scenario is reported; none is chosen afterwards.
 
 | Scenario | Change | Declared |
 |---|---|---|
@@ -426,13 +573,15 @@ Default `{max_per_gene: 1, min_phenotype: strong}`: one finding per gene, Model 
 | `no_gene_panel` | panel off (no floor, no deep search) | for Model 3, before its run |
 | `one_finding_per_gene` | `alternative_pairs: {max_per_gene: 1, min_phenotype: strong}` | for Model 3, before its run |
 | `no_read_backed_phase` | `phase_sources: [multiallelic, ps, pid]` | for Model 3, before its run |
+| `no_regulatory_network` | `exclude_evidence_classes: [regulatory_network]`; reported only with `regnet.enabled` and `regnet.second_hit` | for Model 4, before its run |
 
 - With AlphaMissense as the missense tool, `no_known_no_clinical_predictor` is close to `no_known_variant`: removing `clinically_trained_predictor` now only removes the REVEL fallback and ReMM. The informative ablation of the missense tool is `unsupervised_predictor`, which is not a declared scenario (set it in `exclude_evidence_classes` for a separate run).
-- `no_gene_panel`, `one_finding_per_gene` and `no_read_backed_phase` equal `base` when their feature is off (no panel; `max_per_gene: 1`; phasing disabled, so there is no `whatshap` source).
+- `no_gene_panel`, `one_finding_per_gene` and `no_read_backed_phase` equal `base` when their feature is off (no panel; `max_per_gene: 1`; phasing disabled, so there is no `whatshap` source). `no_regulatory_network` equals `base` when no network row was used in a pair.
 
 ### Not covered
 
 - No cis-regulatory window. A second allele far upstream, like the intergenic variant 44 kb upstream of BUB1B in Ochiai 2014 (doi:10.1073/pnas.1317008111), cannot be found: VEP links up- and downstream variants to a gene only within 5 kb, entries without a gene symbol are dropped, and the deep search excludes up/downstream and plain intronic variants (user decision 2026-10-20: phase only).
+- The optional `regnet` module adds a search bounded by scDoRI peaks only (see "Regulatory-network limitations"); it does not change the bullet above.
 - SVs and CNVs, so an SV second allele cannot be found either. A single hit in a recessive gene may have an undetected second allele; that is why `single_hit` is its own category.
 - Read-backed phase blocks from short reads are short. WhatsHap links two alleles only through overlapping reads and intermediate het calls, so a pair several kb apart may stay `unknown`. No setting is tuned to change that.
 - No statistical or hybrid phasing (SHAPEIT, Beagle with a population panel; Choi 2018, doi:10.1371/journal.pgen.1007308). A rare variant absent from the reference panel gets an arbitrary statistical phase, so it is deferred.
@@ -455,6 +604,7 @@ Each submitted model is a code version plus `config.yaml`. The patient-specific 
 - **Model 2** used REVEL as the single missense tool, no excluded regions, no gene panel, one finding per gene and no read-backed phasing. With today's code the closest settings are `missense_tool: revel`, `exclude_regions: []`, the gene panel off, `alternative_pairs.max_per_gene: 1` and `phasing.enabled: false`. The output can still differ in the one pair-choice edge case (a weaker proven-trans pair with a higher epcr now beats a stronger unphased pair), and in what has no setting: the splice-shift rule, and the phase graph (transitive relations, conflicts, cis collapse) in genes with three or more phase-linked alleles.
 - **Model 3** = the settings in `config.yaml`: AlphaMissense as the missense tool, the splice-shift rule, the MHC exclusion, the phase graph with cis collapse, read-backed phasing (`phase`), the MVA gene panel (phenotype floor and deep second-hit search), and alternative pairs with a shared budget, with the three new sensitivity scenarios. Its settings were fixed before its phase and prioritise runs; no value was changed after seeing the output.
 - The MVA gene panel, the deep second-hit search and the alternative pairs were added after Model 2's challenge score, so Model 3 is not an independent evaluation.
+- **Model 4 (regulatory network)** = Model 3 plus the `regnet` module (see "Regulatory network (`regnet`)"): scDoRI enhancer-peak links, TF regulons and S-LDSC trait enrichment, a regulatory report and a supporting, second-hit-only allele in the pair ranking, with the `no_regulatory_network` scenario. It was designed after the Model 2 and Model 3 results, so it is not an independent evaluation either. Its trait list and every other setting were fixed before its run; no value was changed after seeing the output. The module is off by default, so Model 2 and 3 settings reproduce their outputs unchanged.
 
 ## Downstream interpretation caveats
 
@@ -504,6 +654,7 @@ Each submitted model is a code version plus `config.yaml`. The patient-specific 
 - REVEL is ClinGen-calibrated up to PP3_Strong for missense ([Pejaver 2022](https://doi.org/10.1016/j.ajhg.2022.10.013)); so is AlphaMissense ([Bergquist 2025](https://doi.org/10.1016/j.gim.2025.101402)). popEVE: [Orenbuch 2025](https://doi.org/10.1038/s41588-025-02400-1).
 - SpliceAI use follows the ClinGen splicing recommendations ([Walker 2023](https://doi.org/10.1016/j.ajhg.2023.06.002)). G2P allelic requirements: [Thormann 2019](https://doi.org/10.1038/s41467-019-10016-3). MechPredict: [Badonyi & Marsh 2024](https://doi.org/10.1371/journal.pone.0307312).
 - MVA gene panel: BUB1B ([Hanks 2004](https://doi.org/10.1038/ng1449)), CEP57 ([Snape 2011](https://doi.org/10.1038/ng.822)), TRIP13 ([Yost 2017](https://doi.org/10.1038/ng.3883)). Non-coding or hypomorphic second BUB1B alleles: [Rio Frio 2010](https://doi.org/10.1056/NEJMoa1006565), [Ochiai 2014](https://doi.org/10.1073/pnas.1317008111), [Sieben 2020](https://doi.org/10.1172/JCI126863). Read-backed phasing: WhatsHap ([Patterson 2015](https://doi.org/10.1089/cmb.2014.0157)).
+- Regulatory network: S-LDSC ([Finucane 2015](https://doi.org/10.1038/ng.3404)); cell-type S-LDSC ([Finucane 2018](https://doi.org/10.1038/s41588-018-0081-4)); sc-linker ([Jagadeesh 2022](https://doi.org/10.1038/s41588-022-01187-9)); common and Mendelian disease genes converge on phenotype-matched traits ([Freund 2018](https://doi.org/10.1016/j.ajhg.2018.08.017)); non-coding second hits in phenotype-matched genes ([Ellingford 2022](https://doi.org/10.1186/s13073-022-01073-3)); a distal regulatory allele upstream of an MVA gene ([Ochiai 2014](https://doi.org/10.1073/pnas.1317008111)).
 
 ## Tests
 

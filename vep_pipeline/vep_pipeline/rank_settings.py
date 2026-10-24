@@ -5,6 +5,7 @@ before the output-path default is computed, so the default file name `{prefix}.t
 """
 from __future__ import annotations
 import copy
+import csv
 import re
 from pathlib import Path
 
@@ -17,7 +18,8 @@ FITS = ("full", "single_hit", "unknown_moi", "panel_partner")
 PANEL_FLOORS = (None, "strong", "moderate")
 PHENOS = ("strong", "moderate", "weak", "unknown", "none")
 EXCLUDABLE = ("known_variant", "clinically_trained_predictor", "unsupervised_predictor", "population",
-              "gene_prior_dominant")
+              "gene_prior_dominant", "regulatory_network")
+SLDSC_MODELS = ("M1", "M1bin")
 SEXES = ("MALE", "FEMALE", "UNKNOWN_SEX", "OTHER_SEX")
 GNOMAD_GROUPS = ("AFR", "AMR", "ASJ", "EAS", "FIN", "MID", "NFE", "SAS", "AMI", "REMAINING")  # gnomAD v4
 _HPO = re.compile(r"^HP:\d{7}$")
@@ -56,6 +58,20 @@ PHASING_DEFAULTS = {
     "indels": True,
     "mem": "16G",
     "time": "08:00:00",
+}
+
+REGNET_DEFAULTS = {
+    "enabled": False,
+    "scdori_dir": None,                        # scDoRI postprocess output directory (regnet-build input)
+    "sldsc_dirs": [],                          # S-LDSC result directories (regnet-build input)
+    "sldsc_model": "M1",
+    "build_dir": None,                         # default {output.dir}/regnet
+    "trait_labels": str(PKG_DIR / "data" / "sldsc_trait_labels.tsv"),
+    "traits": [],                              # pre-declared S-LDSC traits used for ranking
+    "fdr": 0.10,
+    "second_hit": True,
+    "null_draws": 1000,
+    "seed": 2026,
 }
 
 DEFAULT_EXCLUDE_REGIONS = [{"name": "MHC", "chrom": "6", "start": 28510120, "end": 33480577}]  # GRC MHC, GRCh38
@@ -184,6 +200,58 @@ def phasing_settings(cfg: dict) -> dict:
         if not Path(f"{ph['reference']}.fai").is_file():
             raise ConfigError(f"phasing.reference: index {ph['reference']}.fai not found; run `samtools faidx`")
     return ph
+
+
+def _str_list(value, where):
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ConfigError(f"{where} must be a list of strings, got {value!r}")
+    return value
+
+
+def _need_path(value, where, is_dir):
+    if not value or not isinstance(value, str):
+        raise ConfigError(f"{where} must be set for regnet-build, got {value!r}")
+    if not (Path(value).is_dir() if is_dir else Path(value).is_file()):
+        raise ConfigError(f"{where}: {value} not found")
+
+
+def regnet_settings(cfg: dict, need_build: bool = True) -> dict:
+    """Validate `regnet:`. need_build=True (prioritise): when enabled, the compiled resource must exist and cover
+    the declared traits. need_build=False (regnet-build): the build inputs must exist; `enabled` and `traits` are not needed."""
+    rn = _section(cfg, "regnet", REGNET_DEFAULTS)
+    _bool(rn["enabled"], "regnet.enabled")
+    _bool(rn["second_hit"], "regnet.second_hit")
+    _number(rn["fdr"], "regnet.fdr", 0.0, 1.0, lo_open=True)
+    if rn["sldsc_model"] not in SLDSC_MODELS:
+        raise ConfigError(f"regnet.sldsc_model must be one of {SLDSC_MODELS}, got {rn['sldsc_model']!r}")
+    if not _is_int(rn["null_draws"]) or rn["null_draws"] < 1:
+        raise ConfigError(f"regnet.null_draws must be a positive integer, got {rn['null_draws']!r}")
+    if not _is_int(rn["seed"]) or rn["seed"] < 0:
+        raise ConfigError(f"regnet.seed must be a non-negative integer, got {rn['seed']!r}")
+    _str_list(rn["traits"], "regnet.traits")
+    _str_list(rn["sldsc_dirs"], "regnet.sldsc_dirs")
+    rn["build_dir"] = rn["build_dir"] or str(Path(cfg["output"]["dir"]) / "regnet")
+    if not need_build:
+        _need_path(rn["scdori_dir"], "regnet.scdori_dir", True)
+        if not rn["sldsc_dirs"]:
+            raise ConfigError("regnet.sldsc_dirs must list at least one S-LDSC result directory for regnet-build")
+        for d in rn["sldsc_dirs"]:
+            _need_path(d, "regnet.sldsc_dirs", True)
+        if rn["trait_labels"] is not None:
+            _need_path(rn["trait_labels"], "regnet.trait_labels", False)
+        return rn
+    if rn["enabled"]:
+        if not rn["traits"]:
+            raise ConfigError("regnet.enabled needs regnet.traits: the pre-declared S-LDSC traits to rank with")
+        traits_tsv = Path(rn["build_dir"]) / "traits.tsv"
+        if not traits_tsv.is_file():
+            raise ConfigError(f"regnet.enabled: {traits_tsv} not found; run `bin/vep-pipeline regnet-build` first")
+        with open(traits_tsv, newline="") as fh:
+            known = {r["trait"] for r in csv.DictReader(fh, delimiter="\t")}
+        missing = [t for t in rn["traits"] if t not in known]
+        if missing:
+            raise ConfigError(f"regnet.traits: {missing} not in {traits_tsv}")
+    return rn
 
 
 def _check_regions(regions):

@@ -20,11 +20,12 @@ import yaml
 from .candidates import build_alleles, collect, findings_for_gene, pairs_tried, phase_graph
 from .config import ConfigError
 from .evidence import LEVELS, NULL_SO
-from .exomiser import load_pheno, load_remm, pheno_strength
+from . import regnet
+from .exomiser import gene_pheno, load_pheno, load_remm
 from .genedb import g2p_path, load_g2p, load_sf
 from .jobs import PKG_ROOT, _sbatch_header, final_vcf_path, work_dir
 from .phasing import load_readback, readback_path
-from .rank_settings import PHENOS, exomiser_settings, phasing_settings
+from .rank_settings import PHENOS, exomiser_settings, phasing_settings, regnet_settings
 
 CSV_HEADER = ("proband_id", "chrom_1", "pos_1", "ref_1", "alt_1", "chrom_2", "pos_2", "ref_2", "alt_2", "epcr",
               "finding_type", "notes")
@@ -88,17 +89,11 @@ def secondary_for(f, sf, exclude) -> str | None:
 
 
 def score_all(findings, pe, settings, sf_genes) -> tuple:
-    tiers, cuts, sec = settings["tiers"], settings["pheno_rank"], settings["secondary"]
+    tiers, sec = settings["tiers"], settings["secondary"]
     exclude = frozenset(settings["exclude_evidence_classes"])
-    gp = settings["gene_panel"]
     primary, secondary = [], []
     for f in findings:
-        pheno = pheno_strength(pe, f.gene, cuts)
-        panel = ""
-        if f.gene in gp["genes"]:
-            panel = gp["name"] or "gene_panel"
-            if gp["phenotype_floor"] and PHENOS.index(gp["phenotype_floor"]) < PHENOS.index(pheno):
-                pheno, panel = gp["phenotype_floor"], f"{panel} (phenotype floor)"
+        pheno, panel = gene_pheno(pe, f.gene, settings)
         sfg = sf_genes.get(f.gene) if sec["enabled"] else None
         if sfg and pheno not in ("strong", "moderate"):
             grade = secondary_for(f, sfg, exclude)
@@ -259,7 +254,9 @@ CAND_COLUMNS = ("gene", "finding_type", "tier", "epcr_before_cap", "phenotype", 
 # pLoF pairs in gnomAD (general population) are in cis, whereas ~96% of phaseable pairs in their diagnosed patients
 # were in trans (a selected cohort). No paper derives P(trans) for an affected singleton, so 0.5 is a neutral
 # default and 0.15 / 0.9 bracket it.
-# The last three isolate the gene panel, the alternative pair rows and read-backed phase.
+# The last three isolate the gene panel, the alternative pair rows and read-backed phase. REGNET_SCENARIO (the
+# regulatory-network second hit removed) is reported in addition only when regnet.enabled and regnet.second_hit, so a
+# run without the hook keeps the same sensitivity table.
 SCENARIOS = (
     ("base", {}),
     ("no_known_variant", {"exclude_evidence_classes": ["known_variant"]}),
@@ -272,6 +269,7 @@ SCENARIOS = (
     ("one_finding_per_gene", {"alternative_pairs": {"max_per_gene": 1, "min_phenotype": "strong"}}),
     ("no_read_backed_phase", {"phase_sources": ["multiallelic", "ps", "pid"]}),
 )
+REGNET_SCENARIO = ("no_regulatory_network", {"exclude_evidence_classes": ["regulatory_network"]})
 
 
 def write_csv(rows, path, proband, prefix, pe):
@@ -373,11 +371,11 @@ def scenario_settings(settings, change) -> dict:
     return s
 
 
-def write_sensitivity(cands, genes, sf_genes, pe, settings, sex, path, readback=None):
+def write_sensitivity(cands, genes, sf_genes, pe, settings, sex, path, readback=None, scenarios=SCENARIOS):
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh, delimiter="\t", lineterminator="\n")
         w.writerow(["scenario", "row", "gene", "finding_type", "tier", "epcr", "variant_1", "variant_2"])
-        for name, change in SCENARIOS:
+        for name, change in scenarios:
             chosen = rank(cands, genes, sf_genes, pe, scenario_settings(settings, change), sex, readback).chosen
             for i, s in enumerate(chosen, 1):
                 keys = [a.key for a in s.finding.alleles] + [""]
@@ -385,8 +383,9 @@ def write_sensitivity(cands, genes, sf_genes, pe, settings, sex, path, readback=
 
 
 def run(cfg, settings, sensitivity=False) -> tuple:
-    """Scan the VEP VCF once, rank, and write the CSV, the candidates, excluded and compound-het TSVs and (optionally)
-    the sensitivity table."""
+    """Scan the VEP VCF once, rank, and write the CSV, the candidates, excluded and compound-het TSVs, (optionally)
+    the sensitivity table and, with regnet.enabled, the regulatory TSV and its summary; with regnet.second_hit too, its
+    second_hit rows join the candidates (regnet.add_second_hits) before ranking."""
     ex = exomiser_settings(cfg)
     ph = phasing_settings(cfg)
     vcf = final_vcf_path(cfg)
@@ -402,19 +401,30 @@ def run(cfg, settings, sensitivity=False) -> tuple:
         if not side.is_file():
             raise ConfigError(f"{side} not found: run `vep-pipeline phase --submit` first")
         readback = load_readback(side)
-    excluded = []
-    cands = collect(vcf, cfg["sample"], settings, genes, remm, excluded)
-    r = rank(cands, genes, sf_genes, pe, settings, ex["sex"], readback)
+    rn = regnet_settings(cfg)
+    res = regnet.load_resource(Path(rn["build_dir"])) if rn["enabled"] else None
+    gate = None if "population" in settings["exclude_evidence_classes"] else settings["af"]["max_recessive"]
+    hook = regnet.HitCollector(res.index, tuple(settings["af"]["populations"]), gate) if res else None
     out = Path(settings["output"])
     out.parent.mkdir(parents=True, exist_ok=True)
+    excluded = []
+    cands = collect(vcf, cfg["sample"], settings, genes, remm, excluded, hook=hook)
+    if res:
+        rows, summary = regnet.score(hook.hits, res, pe, remm, settings, rn)
+        regnet.write_regulatory(rows, out.with_suffix(".regulatory.tsv"), settings["chrom_prefix"])
+        regnet.write_summary(summary, out.with_suffix(".regulatory.summary.tsv"))
+        if rn["second_hit"]:
+            cands = regnet.add_second_hits(cands, rows, remm, tuple(settings["af"]["populations"]))
+    r = rank(cands, genes, sf_genes, pe, settings, ex["sex"], readback)
     write_csv(r.chosen, out, cfg["sample"], settings["chrom_prefix"], pe)
     cand_path = out.with_suffix(".candidates.tsv")
     write_candidates(r.kept, cand_path, pe)
     write_excluded(excluded, out.with_suffix(".excluded.tsv"))
     write_compound_het(r, genes, settings, out.with_suffix(".compound_het.tsv"), readback)
     if sensitivity:
+        scenarios = SCENARIOS + (REGNET_SCENARIO,) if res and rn["second_hit"] else SCENARIOS
         write_sensitivity(cands, genes, sf_genes, pe, settings, ex["sex"], out.with_suffix(".sensitivity.tsv"),
-                          readback)
+                          readback, scenarios)
     return out, cand_path
 
 

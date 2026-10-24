@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse, sys
 from pathlib import Path
 
-from . import checks as chk, download as dl, exomiser as exo, jobs, phasing, prioritise as pr, rank_settings, smoke as smk
+from . import checks as chk, download as dl, exomiser as exo, jobs, phasing, prioritise as pr, rank_settings, regnet_build, smoke as smk
 from .config import ConfigError, load_config, _normalise
 from .registry import RUNNABLE, enabled_plugins, load_registry, unsupported_reason
 
@@ -20,6 +20,7 @@ COMMANDS = {
     "exomiser": "write the phenopacket and the Exomiser SLURM job (phenotype-only + exome + genome); --submit runs it",
     "prioritise": "rank findings and write the top-N CSV (run it with --slurm on a WGS VCF)",
     "phase": "WhatsHap read-backed phasing of candidate genes: writes the SLURM job (--submit runs it)",
+    "regnet-build": "compile scDoRI eGRN/GRN + S-LDSC results for prioritise (run inside an allocation)",
 }
 
 # Later tasks register handlers here: name -> callable(cfg, args) -> int
@@ -180,6 +181,7 @@ HANDLERS["exomiser"] = exomiser_cmd
 def prioritise_cmd(cfg, args) -> int:
     """Rank findings and write the CSV here, or (--slurm) write/submit a job that does it."""
     settings = rank_settings.prioritise_settings(cfg, top_n=args.top_n, output=args.output)
+    rank_settings.regnet_settings(cfg)                 # fail here, not on the compute node, on a missing build
     if args.submit and not args.slurm:
         raise ConfigError("--submit only applies to --slurm")
     if args.slurm:
@@ -218,6 +220,17 @@ def phase_cmd(cfg, args) -> int:
     return 0
 
 HANDLERS["phase"] = phase_cmd
+
+def regnet_build_cmd(cfg, args) -> int:
+    """Compile the scDoRI / S-LDSC results into the regnet resource under regnet.build_dir."""
+    rn = rank_settings.regnet_settings(cfg, need_build=False)
+    labels = Path(rn["trait_labels"]) if rn["trait_labels"] else None
+    counts = regnet_build.build(Path(rn["scdori_dir"]), [Path(d) for d in rn["sldsc_dirs"]], rn["sldsc_model"],
+                                Path(rn["build_dir"]), labels)
+    print(f"regnet resource in {rn['build_dir']}: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+    return 0
+
+HANDLERS["regnet-build"] = regnet_build_cmd
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vep-pipeline", description=__doc__)

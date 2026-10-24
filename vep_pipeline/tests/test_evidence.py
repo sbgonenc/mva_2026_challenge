@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from prioritise_helpers import make_ev
 
 from vep_pipeline.evidence import clinvar_class, gene_evidence, lower, splice_shifted_out, variant_level
@@ -81,6 +83,46 @@ def test_remm_is_a_second_hit_signal_for_non_protein_altering_variants():
     assert variant_level(make_ev(remm=0.97), None)[0] is None                            # missense: not a ReMM target
     both = variant_level(make_ev(consequence="intron_variant", cadd=26.0, remm=0.97), None)
     assert both[:2] == ("supporting", True) and len(both[2]) == 2
+
+
+UNSUP, CLIN = "unsupervised_predictor", "clinically_trained_predictor"
+
+
+def test_grn_is_supporting_second_hit_only():
+    ev = make_ev(consequence="intergenic_variant", grn="peak chr1:100-600 -> GENEA; R1", grn_classes=frozenset({UNSUP}))
+    assert variant_level(ev, None) == ("supporting", True,
+        ["regulatory network: peak chr1:100-600 -> GENEA; R1 (second hit only)"])
+    assert variant_level(ev, None, frozenset({"regulatory_network"}))[0] is None
+
+
+def test_grn_combines_with_other_second_hit_signals():
+    ev = make_ev(consequence="intron_variant", remm=0.97, grn="peak p -> G; R2", grn_classes=frozenset({CLIN}))
+    assert variant_level(ev, None)[2] == ["ReMM 0.970 (second hit only)",
+                                          "regulatory network: peak p -> G; R2 (second hit only)"]
+    assert variant_level(ev, None, frozenset({"regulatory_network"}))[2] == ["ReMM 0.970 (second hit only)"]
+
+
+def test_grn_with_clinvar_blb_still_vetoed():
+    ev = make_ev(consequence="intergenic_variant", clinvar="blb", stars=1, grn="peak p -> G; R1",
+                 grn_classes=frozenset({UNSUP}))
+    assert variant_level(ev, None) == (None, False, ["ClinVar B/LB 1*"])
+    assert variant_level(ev, None, frozenset({"known_variant"}))[:2] == ("supporting", True)   # veto lifted
+    assert variant_level(replace(ev, stars=0), None)[:2] == ("supporting", True)              # 0 stars: no veto
+
+
+def test_grn_is_regated_by_the_predictor_classes_behind_v():
+    remm_only = make_ev(consequence="intergenic_variant", grn="peak p -> G; R1", grn_classes=frozenset({CLIN}))
+    assert variant_level(remm_only, None)[:2] == ("supporting", True)
+    assert variant_level(remm_only, None, frozenset({UNSUP}))[:2] == ("supporting", True)
+    assert variant_level(remm_only, None, frozenset({CLIN}))[0] is None
+    cadd_only = replace(remm_only, grn_classes=frozenset({UNSUP}))
+    assert variant_level(cadd_only, None, frozenset({CLIN}))[:2] == ("supporting", True)
+    assert variant_level(cadd_only, None, frozenset({UNSUP}))[0] is None
+    both = replace(remm_only, grn_classes=frozenset({UNSUP, CLIN}))
+    assert variant_level(both, None, frozenset({UNSUP}))[:2] == ("supporting", True)
+    assert variant_level(both, None, frozenset({CLIN}))[:2] == ("supporting", True)
+    assert variant_level(both, None, frozenset({UNSUP, CLIN}))[0] is None
+    assert variant_level(replace(remm_only, grn_classes=frozenset()), None)[0] is None     # no class behind V
 
 
 def test_clinvar_evidence_and_ablation():

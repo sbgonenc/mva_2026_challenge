@@ -125,3 +125,16 @@ prioritise:                          # `bin/vep-pipeline prioritise --slurm --su
     phenotype_floor: strong
     deep_second_hit: true
   alternative_pairs: {max_per_gene: 3, min_phenotype: strong}   # max_per_gene 1 = Model 2 behaviour
+
+regnet:                              # optional; `bin/vep-pipeline regnet-build` (once), then prioritise. See README "Regulatory network (`regnet`)"
+  enabled: false                     # true: prioritise writes *.regulatory.tsv and adds second-hit-only network alleles; needs traits + a built build_dir
+  scdori_dir: /path/to/scdori/postprocess          # holds gene_peak_interactions/, eGRN_act_peak_gene/, GRN_act_TF_gene/
+  sldsc_dirs: [/path/to/sldsc/out_traits]          # each holds full/passing.txt and h2_cts/<sldsc_model>/; first dir wins per trait
+  sldsc_model: M1                    # M1 reads TF_<TF> rows, M1bin TFbin_<TF> rows
+  build_dir: null                    # default {output.dir}/regnet
+  trait_labels: null                 # null = packaged vep_pipeline/data/sldsc_trait_labels.tsv
+  traits: []                         # pre-declared S-LDSC trait ids, chosen from the labels before any run
+  fdr: 0.10
+  second_hit: true
+  null_draws: 1000
+  seed: 2026

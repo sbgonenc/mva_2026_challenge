@@ -1,0 +1,306 @@
+trait	label
+EFO_0000195	metabolic syndrome
+EFO_0003881	hysterectomy
+EFO_0004229	Dupuytren Contracture
+EFO_0004298	cardiovascular measurement
+EFO_0004302	anthropometric measurement
+EFO_0004309	platelet count
+EFO_0004312	vital capacity
+EFO_0004340	body mass index
+EFO_0004341	body fat distribution
+EFO_0004458	C-reactive protein measurement
+EFO_0004468	glucose measurement
+EFO_0004502	adiponectin measurement
+EFO_0004509	hemoglobin measurement
+EFO_0004515	muscle measurement
+EFO_0004527	mean corpuscular hemoglobin
+EFO_0004528	mean corpuscular hemoglobin concentration
+EFO_0004530	triglyceride measurement
+EFO_0004531	urate measurement
+EFO_0004532	serum gamma-glutamyl transferase measurement
+EFO_0004533	alkaline phosphatase measurement
+EFO_0004541	HbA1c measurement
+EFO_0004555	glycoprotein measurement
+EFO_0004574	total cholesterol measurement
+EFO_0004611	low density lipoprotein cholesterol measurement
+EFO_0004612	high density lipoprotein cholesterol measurement
+EFO_0004617	cystatin C measurement
+EFO_0004625	progranulin measurement
+EFO_0004682	QT interval
+EFO_0004696	sex hormone-binding globulin measurement
+EFO_0004741	obsolete_blood urea nitrogen measurement
+EFO_0004784	self reported educational attainment
+EFO_0004830	caudate nucleus volume
+EFO_0004833	neutrophil count
+EFO_0004838	calcium measurement
+EFO_0004842	eosinophil count
+EFO_0004872	inflammatory biomarker measurement
+EFO_0004908	testosterone measurement
+EFO_0005058	tyrosine measurement
+EFO_0005091	monocyte count
+EFO_0005110	obsolete_fatty acid measurement
+EFO_0005288	non-small cell lung adenocarcinoma
+EFO_0005670	smoking initiation
+EFO_0005680	omega-6 polyunsaturated fatty acid measurement
+EFO_0005763	pulse pressure measurement
+EFO_0006312	mitochondrial DNA measurement
+EFO_0006335	systolic blood pressure
+EFO_0006336	diastolic blood pressure
+EFO_0006340	mean arterial pressure
+EFO_0006783	psychosocial stress measurement
+EFO_0006807	linoleic acid measurement
+EFO_0006901	angiopoietin-2 measurement
+EFO_0006941	grip strength measurement
+EFO_0006947	red wine liking measurement
+EFO_0007056	clinical treatment
+EFO_0007660	neuroticism measurement
+EFO_0007761	docosahexaenoic acid measurement
+EFO_0007800	body fat percentage
+EFO_0007865	loneliness measurement
+EFO_0007929	triglyceride:HDL cholesterol ratio
+EFO_0007986	reticulocyte count
+EFO_0008002	physical activity measurement
+EFO_0008011	a disintegrin and metalloproteinase with thrombospondin motifs 13 measurement
+EFO_0008014	ADP-ribosyl cyclase/cyclic ADP-ribose hydrolase 2 measurement
+EFO_0008021	alpha-2-macroglobulin receptor-associated protein measurement
+EFO_0008042	C-C motif chemokine 14 measurement
+EFO_0008044	C-C motif chemokine 16 measurement
+EFO_0008056	C-X-C motif chemokine 10 measurement
+EFO_0008068	carbonic anhydrase 6 measurement
+EFO_0008101	contactin-5 measurement
+EFO_0008196	kallistatin measurement
+EFO_0008237	motor development measurement
+EFO_0008254	P-Selectin measurement
+EFO_0008277	Secreted frizzled-related protein 3 measurement
+EFO_0008289	SPARC-like protein 1 measurement
+EFO_0008354	cognitive function measurement
+EFO_0008589	esterified cholesterol measurement
+EFO_0008591	free cholesterol measurement
+EFO_0008622	female genital tract polyp
+EFO_0009048	Intrahepatic cholestasis of pregnancy
+EFO_0009185	heart rate response to recovery post exercise
+EFO_0009282	sodium measurement
+EFO_0009469	Bartholin gland disease
+EFO_0009589	worry measurement
+EFO_0009594	irritability measurement
+EFO_0009595	guilt measurement
+EFO_0009598	feeling miserable measurement
+EFO_0009695	household income
+EFO_0009727	shortness of breath
+EFO_0009768	glutamine measurement
+EFO_0009770	leucine measurement
+EFO_0009885	frailty measurement
+EFO_0009959	diverticular disease
+EFO_0010111	acetoacetate measurement
+EFO_0010112	acetate measurement
+EFO_0010119	omega-3 polyunsaturated fatty acid measurement
+EFO_0010155	taste liking measurement
+EFO_0010232	osteocalcin measurement
+EFO_0010552	social environment measurement
+EFO_0010554	retinal vasculature measurement
+EFO_0010555	left ventricular stroke volume measurement
+EFO_0010593	cystatin B measurement
+EFO_0010602	brain age measurement
+EFO_0010613	tumor necrosis factor ligand superfamily member 14 measurement
+EFO_0010615	galanin peptides measurement
+EFO_0010733	polyunsaturated fatty acid measurement
+EFO_0010785	fms-related tyrosine kinase 3 ligand measurement
+EFO_0010815	remnant cholesterol measurement
+EFO_0010819	clonal hematopoiesis
+EFO_0010821	liver fat measurement
+EFO_0010968	phosphate measurement
+EFO_0011005	urea measurement
+EFO_0011015	educational attainment
+EFO_0020098	abdominal fat ratio
+EFO_0020099	weight-to-muscle ratio
+EFO_0020104	pelvis bone mineral density
+EFO_0020107	thigh muscle volume
+EFO_0020146	angiopoietin-1 measurement
+EFO_0020164	asialoglycoprotein receptor 1 measurement
+EFO_0020194	brother of CDO measurement
+EFO_0020212	cadherin-2 measurement
+EFO_0020213	cadherin-3 measurement
+EFO_0020244	cathepsin L2 measurement
+EFO_0020245	CD166 antigen measurement
+EFO_0020283	complement factor D measurement
+EFO_0020290	creatine kinase b-type measurement
+EFO_0020316	delta-like protein 1 measurement
+EFO_0020395	fractalkine measurement
+EFO_0020398	galectin-4 measurement
+EFO_0020400	gdnf family receptor alpha-1 measurement
+EFO_0020440	hepcidin measurement
+EFO_0020525	lactoperoxidase measurement
+EFO_0020588	natural cytotoxicity triggering receptor 1 measurement
+EFO_0020624	peptidoglycan recognition protein 1 measurement
+EFO_0020632	persephin measurement
+EFO_0020705	reticulon-4 receptor measurement
+EFO_0020763	tartrate-resistant acid phosphatase type 5 measurement
+EFO_0020765	testican-1 measurement
+EFO_0020817	tumor-associated calcium signal transducer 2 measurement
+EFO_0020932	galectin-1 measurement
+EFO_0020946	phospholipids:total lipids ratio
+EFO_0021842	interleukin-1 receptor type 2 measurement
+EFO_0021897	apolipoprotein B to apolipoprotein A1 ratio
+EFO_0021899	cholesterol in IDL measurement
+EFO_0021900	cholesterol in large HDL measurement
+EFO_0021902	cholesterol in large VLDL measurement
+EFO_0021903	cholesterol in medium HDL measurement
+EFO_0021924	CD59 glycoprotein measurement
+EFO_0021960	growth/differentiation factor 8 measurement
+EFO_0021974	SLIT and NTRK-like protein 1 measurement
+EFO_0022004	thrombopoietin measurement
+EFO_0022144	triglycerides in very small VLDL measurement
+EFO_0022146	phospholipids in small VLDL measurement
+EFO_0022149	triglycerides in IDL measurement
+EFO_0022152	concentration of medium VLDL particles
+EFO_0022154	phospholipids in medium VLDL measurement
+EFO_0022155	triglycerides in medium VLDL measurement
+EFO_0022160	concentration of large LDL particles measurement
+EFO_0022161	total lipids in IDL
+EFO_0022163	total lipids in large LDL
+EFO_0022164	phospholipids in IDL measurement
+EFO_0022165	cholesteryl esters in large LDL measurement
+EFO_0022174	phospholipids in large LDL measurement
+EFO_0022176	free cholesterol in large LDL measurement
+EFO_0022179	total cholesterol in small LDL
+EFO_0022183	phospholipids in medium LDL measurement
+EFO_0022187	monounsaturated fatty acids; 16:1, 18:1 measurement
+EFO_0022188	concentration of large HDL particles measurement
+EFO_0022189	total lipids in large HDL
+EFO_0022190	phospholipids in large HDL measurement
+EFO_0022228	cholesterol in small VLDL measurement
+EFO_0022229	cholesterol in very large HDL measurement
+EFO_0022231	cholesterol in very small VLDL measurement
+EFO_0022234	cholesterol to total lipids in large HDL percentage
+EFO_0022236	cholesterol to total lipids in large VLDL percentage
+EFO_0022237	cholesterol to total lipids in medium HDL percentage
+EFO_0022239	cholesterol to total lipids in medium VLDL percentage
+EFO_0022240	cholesterol to total lipids in small HDL percentage
+EFO_0022244	cholesterol to total lipids in very large VLDL percentage
+EFO_0022245	cholesterol to total lipids in very small VLDL percentage
+EFO_0022246	cholesteryl esters to total lipids in chylomicrons and extremely large VLDL percentage
+EFO_0022248	cholesteryl esters to total lipids in large HDL percentage
+EFO_0022250	cholesteryl esters to total lipids in large VLDL percentage
+EFO_0022251	cholesteryl esters to total lipids in medium HDL percentage
+EFO_0022253	cholesteryl esters to total lipids in medium VLDL percentage
+EFO_0022254	cholesteryl esters to total lipids in small HDL percentage
+EFO_0022257	cholesteryl esters to total lipids in very large HDL percentage
+EFO_0022259	cholesteryl esters to total lipids in very small VLDL percentage
+EFO_0022261	degree of unsaturation measurement
+EFO_0022262	docosahexaenoic acid to total fatty acids percentage
+EFO_0022265	free cholesterol in large VLDL measurement
+EFO_0022269	free cholesterol in medium VLDL measurement
+EFO_0022274	free cholesterol in very large VLDL measurement
+EFO_0022279	free cholesterol to total lipids in large HDL percentage
+EFO_0022282	free cholesterol to total lipids in medium HDL percentage
+EFO_0022283	free cholesterol to total lipids in medium LDL percentage
+EFO_0022285	free cholesterol to total lipids in small HDL percentage
+EFO_0022287	free cholesterol to total lipids in small VLDL percentage
+EFO_0022289	free cholesterol to total lipids in very large VLDL percentage
+EFO_0022290	free cholesterol to total lipids in very small VLDL percentage
+EFO_0022297	phospholipids in small LDL measurement
+EFO_0022300	phospholipids in very small VLDL measurement
+EFO_0022301	phospholipids in VLDL measurement
+EFO_0022302	polyunsaturated fatty acids to monounsaturated fatty acids ratio
+EFO_0022303	polyunsaturated fatty acids to total fatty acids percentage
+EFO_0022304	saturated fatty acids measurement
+EFO_0022305	saturated fatty acids to total fatty acids percentage
+EFO_0022306	total lipids in chylomicrons and extremely large VLDL measurement
+EFO_0022307	total lipids in HDL measurement
+EFO_0022309	total lipids in lipoprotein particles measurement
+EFO_0022310	total lipids in medium HDL measurement
+EFO_0022311	total lipids in small HDL measurement
+EFO_0022312	total lipids in very large HDL measurement
+EFO_0022313	total lipids in very large VLDL measurement
+EFO_1001864	uterine prolapse
+HP_0100633	Esophagitis
+MONDO_0000270	lower respiratory tract disorder
+MONDO_0000812	vertebral column disorder
+MONDO_0000992	heart conduction disease
+MONDO_0001397	mononeuropathy
+MONDO_0002009	major depressive disorder
+MONDO_0002025	psychiatric disorder
+MONDO_0002183	enthesopathy
+MONDO_0002531	skin neoplasm
+MONDO_0002869	heart valve disorder
+MONDO_0002884	nail disorder
+MONDO_0002898	skin cancer
+MONDO_0003014	rhinitis
+MONDO_0003406	sleep-wake disorder
+MONDO_0003620	peripheral nervous system disorder
+MONDO_0004335	digestive system disorder
+MONDO_0004425	hyperthyroidism
+MONDO_0004648	vascular dementia
+MONDO_0004781	acute myocardial infarction
+MONDO_0004867	upper respiratory tract disorder
+MONDO_0004966	gastritis
+MONDO_0004975	Alzheimer disease
+MONDO_0004979	asthma
+MONDO_0004989	breast carcinoma
+MONDO_0005002	chronic obstructive pulmonary disease
+MONDO_0005010	coronary artery disorder
+MONDO_0005015	diabetes mellitus
+MONDO_0005020	intestinal disorder
+MONDO_0005027	epilepsy
+MONDO_0005041	glaucoma
+MONDO_0005044	hypertensive disorder
+MONDO_0005061	lung adenocarcinoma
+MONDO_0005068	myocardial infarction
+MONDO_0005084	mental disorder
+MONDO_0005098	stroke disorder
+MONDO_0005101	ulcerative colitis
+MONDO_0005133	endometriosis
+MONDO_0005138	lung carcinoma
+MONDO_0005147	type 1 diabetes mellitus
+MONDO_0005148	type 2 diabetes mellitus
+MONDO_0005157	lymphoid neoplasm
+MONDO_0005159	prostate carcinoma
+MONDO_0005178	osteoarthritis
+MONDO_0005180	Parkinson disease
+MONDO_0005252	heart failure
+MONDO_0005271	allergic disease
+MONDO_0005294	peripheral vascular disease
+MONDO_0005296	sleep apnea syndrome
+MONDO_0005298	osteoporosis
+MONDO_0005338	open-angle glaucoma
+MONDO_0005341	skin basal cell carcinoma
+MONDO_0005406	gestational diabetes
+MONDO_0005416	osteoarthritis, knee
+MONDO_0005420	hypothyroidism
+MONDO_0005494	triple-negative breast carcinoma
+MONDO_0005550	infectious disease
+MONDO_0005575	colorectal cancer
+MONDO_0005578	arthritic joint disease
+MONDO_0005607	chronic bronchitis
+MONDO_0005649	appendicitis
+MONDO_0005854	mixed connective tissue disease
+MONDO_0006244	HER2 positive breast carcinoma
+MONDO_0006805	intermediate coronary syndrome
+MONDO_0007147	obstructive sleep apnea syndrome
+MONDO_0007186	gastroesophageal reflux disease
+MONDO_0007254	breast cancer
+MONDO_0007886	uterine corpus leiomyoma
+MONDO_0008171	nephrolithiasis
+MONDO_0008228	pernicious anemia
+MONDO_0008375	retinal detachment
+MONDO_0008575	nicotine dependence
+MONDO_0009693	plasma cell myeloma
+MONDO_0011438	acne
+MONDO_0011751	COPD, severe early onset
+MONDO_0011786	allergic rhinitis
+MONDO_0012048	endogenous depression
+MONDO_0012672	cholelithiasis
+MONDO_0013433	primary sclerosing cholangitis
+MONDO_0013792	intracerebral hemorrhage
+MONDO_0015263	Brugada syndrome
+MONDO_0018646	sclerosing cholangitis
+MONDO_0019050	inherited hemoglobinopathy
+MONDO_0020804	basal cell carcinoma
+MONDO_0021124	female infertility
+MONDO_0021400	polyp of colon
+MONDO_0021661	coronary atherosclerosis
+MONDO_0024331	colorectal carcinoma
+MONDO_0024355	respiratory tract infectious disorder
+MONDO_0024644	myocardial ischemia
+MONDO_0043579	enteritis
+MONDO_0100081	sleep disorder

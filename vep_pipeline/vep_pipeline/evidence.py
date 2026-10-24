@@ -19,6 +19,9 @@ Thresholds (verified against the source tables, 2026-10-17):
     from Smedley 2016 AJHG (doi:10.1016/j.ajhg.2016.07.005); the cut-off is the one Xi 2025 Brief Bioinform
     (doi:10.1093/bib/bbaf475) used as a filter on 985 WGS (best as a filter, not as evidence). ReMM is trained on
     curated pathogenic regulatory variants, so it is excluded with the clinically_trained_predictor class.
+  A rare non-coding variant in an scDoRI peak linked to a strong-phenotype gene, with CADD >= 20 or ReMM >= 0.963
+    (regnet second_hit rows), is a second-hit-only signal for that gene (Evidence.grn); it is excluded with the
+    regulatory_network class, and also when every predictor class behind V (Evidence.grn_classes) is excluded.
   Null variants follow the PVS1 tree in outline (Abou Tayoun 2018, doi:10.1002/humu.23626): start_lost and
     NMD-escaping are moderate; a G2P mechanism other than loss of function gives supporting; a dominant or
     unknown-MOI gene without a G2P LoF mechanism needs LOEUF < 0.6 or pHaplo >= 0.86 (Collins 2022,
@@ -80,6 +83,9 @@ class Evidence:
     noncoding_signal: bool    # 5UTR_annotation set, or ENCODE cCRE overlap with CADD >= 20: second-hit candidate only
     remm: float | None = None  # Genomiser ReMM score, attached from the Exomiser variant TSV by candidates.collect
     hgvsc: str = ""            # HGVSc of the representative transcript (3'-shifted by VEP)
+    grn: str = ""              # regulatory-network link (regnet.add_second_hits): a second-hit-only signal
+    grn_classes: frozenset = frozenset()   # predictor classes behind the link's V (CADD: unsupervised_predictor,
+                                           # ReMM: clinically_trained_predictor); grn needs one not excluded
 
 
 def _f(v):
@@ -267,6 +273,8 @@ def variant_level(ev: Evidence, gene, exclude=frozenset(), missense_tool="alpham
     if (ev.remm is not None and ev.remm >= REMM_SECOND_HIT and not protein_altering
             and "clinically_trained_predictor" not in exclude):
         second.append(f"ReMM {ev.remm:.3f} (second hit only)")
+    if ev.grn and "regulatory_network" not in exclude and ev.grn_classes - exclude:
+        second.append(f"regulatory network: {ev.grn} (second hit only)")
     if second:
         return "supporting", True, second
     cls = panel_class(ev, terms, unsupervised) if panel else None

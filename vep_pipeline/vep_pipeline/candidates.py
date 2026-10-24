@@ -112,11 +112,11 @@ def deep_panel_genes(settings) -> frozenset:
     return frozenset(gp["genes"]) if gp["deep_second_hit"] else frozenset()
 
 
-def collect(vcf, sample, settings, genes, remm=None, excluded=None) -> list:
+def collect(vcf, sample, settings, genes, remm=None, excluded=None, hook=None) -> list:
     """Candidates (one per variant and gene) worth keeping in memory; see the module docstring. `remm` maps a
     variant key to its Genomiser ReMM score; it is attached before the evidence pre-filter so ReMM-only variants stay.
     Records inside settings["exclude_regions"] are skipped; when `excluded` is a list, (key, region) is appended
-    for each."""
+    for each. `hook(call, entries)` is called for every record that is not excluded, before the evidence pre-filter."""
     csq_fields, info, fmt = header_fields(vcf)
     for need in ("SYMBOL", "Consequence"):
         if need not in csq_fields:
@@ -142,6 +142,8 @@ def collect(vcf, sample, settings, genes, remm=None, excluded=None) -> list:
             if excluded is not None:
                 excluded.append((call.key, region))
             continue
+        if hook is not None:
+            hook(call, entries)
         for ev in gene_evidence(entries, pops).values():
             if remm:
                 ev = replace(ev, remm=remm.get(call.key))
