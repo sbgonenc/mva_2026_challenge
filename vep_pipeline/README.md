@@ -9,7 +9,7 @@ The design document, implementation plans and run reports are not in this public
 ## Quick start
 
 ```bash
-cd /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/vep_pipeline
+cd ./mva_challenge_26/scripts/vep_pipeline
 # 1. edit config.yaml: input.vcf (required, see below), sample, output.dir, plugins
 bin/vep-pipeline download --dry-run      # plan, sizes, what is reused or manual
 bin/vep-pipeline download                # login node; resumable
@@ -89,10 +89,6 @@ FAIL means one of:
 
 ## Data
 
-### Reused, not downloaded
-
-Paths relative to `/fast/AG_Bunina/Berk/projects/mva_challenge_26/`. These are read in place and never modified.
-
 | Item | Path | Note |
 |---|---|---|
 | Reference FASTA | `references/Homo_sapiens.GRCh38.dna.primary_assembly.fa` (+`.fai`; 194 contigs; Ensembl names `1..22,X,Y,MT`) | identical copy in `exomiser/data/` |
@@ -103,9 +99,7 @@ Paths relative to `/fast/AG_Bunina/Berk/projects/mva_challenge_26/`. These are r
 | Parallel downloader | `exomiser/bin/pget.sh <url> <out> [nconn] [chunk_MB]` | resumable, checks size |
 | SLURM conventions | `exomiser/bin/exomiser.sbatch` | `partition=normal`, `--export=ALL`, `TMPDIR` on `SLURM_TMPDIR` |
 
-### Downloaded by `download`
-
-Ensembl files are pinned to `release-116`. URLs and sizes were checked by HEAD request on 2026-10-11. All land under `data.root` (`/fast/AG_Bunina/Berk/projects/mva_challenge_26/data/vep`).
+Ensembl files are pinned to `release-116`. URLs and sizes were checked by HEAD request on 2026-10-11.
 
 | Item | URL | Bytes |
 |---|---|---|
@@ -135,8 +129,6 @@ Ensembl files are pinned to `release-116`. URLs and sizes were checked by HEAD r
 The SpliceAI plugin calls `add_file($indel)` even when no indel file is given, so `snv=` alone dies with "No file specified". Ensembl publishes SNV scores only, so the pipeline passes an empty, bgzipped, tabix-indexed, header-only VCF as `indel=`. `download` generates it at `{data.plugin_data_dir}/SpliceAI/empty_indel.vcf.gz`; `check` (`spliceai_form`) confirms the argument form.
 
 ## Output
-
-Under `output.dir` (`/fast/AG_Bunina/Berk/projects/mva_challenge_26/results/vep`), with `prefix` = `{sample}`:
 
 | Path | Content |
 |---|---|
@@ -656,12 +648,5 @@ Each submitted model is a code version plus `config.yaml`. The patient-specific 
 - MVA gene panel: BUB1B ([Hanks 2004](https://doi.org/10.1038/ng1449)), CEP57 ([Snape 2011](https://doi.org/10.1038/ng.822)), TRIP13 ([Yost 2017](https://doi.org/10.1038/ng.3883)). Non-coding or hypomorphic second BUB1B alleles: [Rio Frio 2010](https://doi.org/10.1056/NEJMoa1006565), [Ochiai 2014](https://doi.org/10.1073/pnas.1317008111), [Sieben 2020](https://doi.org/10.1172/JCI126863). Read-backed phasing: WhatsHap ([Patterson 2015](https://doi.org/10.1089/cmb.2014.0157)).
 - Regulatory network: S-LDSC ([Finucane 2015](https://doi.org/10.1038/ng.3404)); cell-type S-LDSC ([Finucane 2018](https://doi.org/10.1038/s41588-018-0081-4)); sc-linker ([Jagadeesh 2022](https://doi.org/10.1038/s41588-022-01187-9)); common and Mendelian disease genes converge on phenotype-matched traits ([Freund 2018](https://doi.org/10.1016/j.ajhg.2018.08.017)); non-coding second hits in phenotype-matched genes ([Ellingford 2022](https://doi.org/10.1186/s13073-022-01073-3)); a distal regulatory allele upstream of an MVA gene ([Ochiai 2014](https://doi.org/10.1073/pnas.1317008111)).
 
-## Tests
-
-```bash
-cd /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/vep_pipeline
-micromamba run -n vep116 pytest tests -q                 # unit tests and the integration test
-micromamba run -n vep116 pytest tests -q -m "not integration"
-```
 
 The integration test runs real VEP on the cache bundled with `ensembl-vep` (SNV and SV).
