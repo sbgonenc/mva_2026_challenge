@@ -1,4 +1,4 @@
-# Exomiser 15.1.0 + Genomiser — AG Bunina install
+# Exomiser 15.1.0 + Genomiser install
 
 GRCh38 only, data release **2602**. Verified by known-answer tests, not by
 absence-of-error. Both acceptance gates re-run and passing on 2602.
@@ -37,7 +37,7 @@ Template: `test/genome-smoke.phenopacket.yml`.
 | `etc/analyse-help.txt` | captured `analyse --help` for this exact build |
 | `bin/` | env helper, runner, VCF prep, parallel downloader |
 | `test/` | hg38 known-answer fixtures + recorded ground truth |
-| `data/Homo_sapiens.GRCh38.dna.primary_assembly.fa` | reference symlink → `/fast/AG_Bunina/annotations/GRCh38_2025/` (Ensembl, **unprefixed** contigs) |
+| `data/Homo_sapiens.GRCh38.dna.primary_assembly.fa` | (Ensembl, **unprefixed** contigs) |
 
 ## Verified acceptance gates
 
