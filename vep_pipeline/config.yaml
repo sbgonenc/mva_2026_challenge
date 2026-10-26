@@ -9,27 +9,27 @@ sample: SAMPLE_ID                    # VCF sample column; must equal the Exomise
 
 tools:
   env: vep116
-  vep_repo: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/ensembl-vep
-  plugins_dir: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/VEP_plugins
-  prepare_vcf: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/bin/prepare-patient-vcf.sh
+  vep_repo: ./mva_challenge_26/scripts/ensembl-vep
+  plugins_dir: ./mva_challenge_26/scripts/VEP_plugins
+  prepare_vcf: ./mva_challenge_26/scripts/exomiser/bin/prepare-patient-vcf.sh
   prepare_env: exomiser
-  pget: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/bin/pget.sh
+  pget: ./mva_challenge_26/scripts/exomiser/bin/pget.sh
 
 input:
   vcf: null                          # REQUIRED: proband VCF (raw, or output of prepare-patient-vcf.sh)
   normalize: true                    # false if `vcf` is already prepare-patient-vcf.sh output
-  reference_fasta: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/Homo_sapiens.GRCh38.dna.primary_assembly.fa
+  reference_fasta: ./mva_challenge_26/references/Homo_sapiens.GRCh38.dna.primary_assembly.fa
 
 sv:                                  # optional structural-variant run (off until SV calls exist)
   enabled: false
   vcf: null
 
 output:
-  dir: /fast/AG_Bunina/Berk/projects/mva_challenge_26/results/vep
+  dir: ./mva_challenge_26/results/vep
   prefix: "{sample}"
 
 data:                                # all downloads land under data.root unless a plugin path is set below
-  root: /fast/AG_Bunina/Berk/projects/mva_challenge_26/data/vep
+  root: ./mva_challenge_26/data/vep
   cache_dir: "{data.root}/cache"
   plugin_data_dir: "{data.root}/plugins"
   custom_data_dir: "{data.root}/custom"
@@ -52,13 +52,13 @@ smoke:
 custom:
   ClinVar:
     enabled: true
-    file: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/clinvar.vcf.gz
+    file: ./mva_challenge_26/references/clinvar.vcf.gz
     format: vcf
     type: exact
     fields: [CLNSIG, CLNREVSTAT, CLNDN, CLNSIGCONF, ALLELEID]
   ENCODE_cCRE:
     enabled: true
-    source: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/GRCh38-cCREs.bed
+    source: ./mva_challenge_26/references/GRCh38-cCREs.bed
     format: bed
     type: overlap
 
@@ -68,8 +68,8 @@ plugins:                             # true/false or a mapping. `bin/vep-pipelin
   EVE: true
   CADD:
     enabled: true
-    snv: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/data/whole_genome_SNVs.tsv.gz
-    indels: /fast/AG_Bunina/Berk/projects/mva_challenge_26/scripts/exomiser/data/gnomad.genomes.r4.0.indel.tsv.gz
+    snv: ./mva_challenge_26/scripts/exomiser/data/whole_genome_SNVs.tsv.gz
+    indels: ./mva_challenge_26/scripts/exomiser/data/gnomad.genomes.r4.0.indel.tsv.gz
   dbNSFP:
     enabled: false
     file: null
@@ -78,8 +78,8 @@ plugins:                             # true/false or a mapping. `bin/vep-pipelin
   SpliceAI_Illumina: {enabled: false, snv: null, indel: null}
   SpliceAI2:                         # directories of Illumina's per-chromosome files, each tabix-indexed (-S 1)
     enabled: true
-    snv: /fast/AG_Bunina/Berk/data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/snv
-    indel: /fast/AG_Bunina/Berk/data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/indel
+    snv: ./data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/snv
+    indel: ./data/spliceAI2_data/precomputed_scores_v2.0/GRCh38/indel
   SpliceVault: true
   SpliceRegion: true
   NMD: true
@@ -96,14 +96,14 @@ exomiser:                            # phenotype evidence for `prioritise`; `bin
   hpo: []                            # REQUIRED when enabled: your HPO ids, e.g. [HP:0001250, HP:0001263]
   sex: UNKNOWN_SEX                  # MALE | FEMALE | UNKNOWN_SEX; `check` prints a sex estimate
   phenopacket: null                  # or an existing phenopacket (subject.id must equal `sample`)
-  root: /fast/AG_Bunina/Berk/tools/exomiser
+  root: ./exomiser
   mem: 48G
 
 phasing:                             # `bin/vep-pipeline phase --submit` (before prioritise); WhatsHap read-backed phase
   enabled: true                      # true: prioritise needs the {sample}.readback.tsv sidecar the phase job writes
-  bam: /fast/AG_Bunina/Berk/projects/mva_challenge_26/alignment/sorted.bam   # needs its .bai
+  bam: ./mva_challenge_26/alignment/sorted.bam   # needs its .bai
   # FASTA the BAM was aligned to (GRCh38 analysis set, chr prefix removed); bgzipped, with .fai and .gzi
-  reference: /fast/AG_Bunina/Berk/projects/mva_challenge_26/references/GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set_chr_removed.fna.gz
+  reference: ./GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set_chr_removed.fna.gz
   env: whatshap                      # micromamba env with whatshap and samtools
   indels: false                      # WhatsHap 2.8 has no --indels flag (indels are phased by default); false only omits the legacy flag
   results_dir: null                  # default {output.dir}/phasing
